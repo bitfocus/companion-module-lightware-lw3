@@ -1,6 +1,11 @@
 {
-  "name": "module-companion-lightware3",
-  "version": "0.0.1",
+  "name": "lightware3",
+  "version": "1.0.0",
+	"api_version": "1.0.0",
+	"keywords": [ "Protocol", "Matrix" ],
+	"manufacturer": "Lightware",
+	"product": "LW3",
+	"shortname": "lightware",
   "description": "Control Lightware LW3 Equipment",
   "main": "index.js",
   "scripts": {

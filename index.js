@@ -47,7 +47,7 @@ instance.prototype.init = function() {
 };
 
 var PSTATE_READY = 0,
-    PSTATE_MULTILINE = 1,
+		PSTATE_MULTILINE = 1,
 		PSTATE_SINGLELINE = 2;
 
 instance.prototype.init_tcp = function() {
@@ -306,12 +306,6 @@ instance.prototype.action = function(action) {
 	}
 	debug('action():', action);
 
-};
-
-instance.module_info = {
-	label: 'Lightware LW3 Compatible Device',
-	id: 'lightware3',
-	version: '0.0.1'
 };
 
 instance_skel.extendedBy(instance);
