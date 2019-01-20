@@ -1,16 +1,19 @@
 {
-  "name": "lightware3",
-  "version": "1.0.0",
+	"name": "lightware3",
+	"version": "1.0.1",
 	"api_version": "1.0.0",
-	"keywords": [ "Protocol", "Matrix" ],
+	"keywords": [
+		"Protocol",
+		"Matrix"
+	],
 	"manufacturer": "Lightware",
 	"product": "LW3",
-	"shortname": "lightware",
-  "description": "Control Lightware LW3 Equipment",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "Håkon Nessjøen <haakon@bitfocus.io>",
-  "license": "ISC"
+	"shortname": "lightwareLW3",
+	"description": "Control Lightware LW3 Equipment",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "Håkon Nessjøen <haakon@bitfocus.io>",
+	"license": "MIT"
 }
