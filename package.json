@@ -1,5 +1,8 @@
 {
-	"name": "lightware3",
+	"name": "lightware-lw3",
+	"legacy": [
+		"lightware3"
+	],
 	"version": "1.0.1",
 	"api_version": "1.0.0",
 	"keywords": [
