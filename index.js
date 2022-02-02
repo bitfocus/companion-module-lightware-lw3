@@ -254,7 +254,7 @@ instance.prototype.destroy = function() {
 instance.prototype.actions = function(system) {
 	var self = this;
 
-	self.system.emit('instance_actions', self.id, {
+	self.setActions({
 		'xpt': {
 			label: 'XP:Switch - Select video input for output',
 			options: [
