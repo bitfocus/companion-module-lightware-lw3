@@ -18,5 +18,13 @@
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"author": "Håkon Nessjøen <haakon@bitfocus.io>",
-	"license": "MIT"
+	"license": "MIT",
+	"homepage": "https://github.com/bitfocus/companion-module-lightware-lw3#readme",
+	"bugs": {
+		"url": "https://github.com/bitfocus/companion-module-lightware-lw3/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bitfocus/companion-module-lightware-lw3.git"
+	}
 }
