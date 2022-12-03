@@ -197,6 +197,27 @@ class instance extends instance_skel {
 				}
 			}
 		})
+		this.sendCommand('GET /CTRL/MACROS.*', (result) => {
+			let list = result.split(/\r\n/)
+			if (list.find(item => item.match(/MACROS.\d+=\d+;.+;\w+$/))) {
+				let macros = list.filter(item => item.match(/MACROS.\d+=\d+;.+;\w+$/)).map(item => item.match(/MACROS.\d+=\d+;.+;(\w+)$/)[1])
+				this.actions['runMacro'] = {
+					label: 'Run Macro',
+					options: [{
+						id: 'macro',
+						type: 'dropdown',
+						label: 'Macro',
+						choices: macros.map(macro => { return { id: macro, label: macro } }),
+						default: macros[0],
+					}],
+					callback: (action) => {
+						this.sendCommand('CALL /CTRL/MACROS:run(' + action.options.macro + ')', (result) => {
+						this.log('info', 'Run Macro Result: ' + result)
+					})
+					}
+				}
+			}
+		})
 
 	}
 
