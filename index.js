@@ -18,6 +18,7 @@ class instance extends instance_skel {
 	outputs = {}
 	CHOICES_INPUTS = []
 	CHOICES_OUTPUTS = []
+	CHOICES_PRESETS = []
 
 	constructor(system, id, config) {
 		super(system, id, config)
@@ -82,6 +83,31 @@ class instance extends instance_skel {
 				this[this.deviceType + '_XPT'](opt)
 			},
 		}
+		actions['preset'] = {
+			label: 'Recall Preset',
+			options: [
+				{
+					label: 'Preset',
+					type: 'dropdown',
+					id: 'preset',
+					choices: this.CHOICES_PRESETS,
+					default: this.CHOICES_PRESETS[0]?.id || ''
+				}
+			],
+			callback: (action) => {
+				let opt = action.options
+				if (this.deviceType === this.DTYPE_GENERAL) {
+					this.sendCommand('CALL /PRESETS/AVC:load(' + opt.preset.toString() + ')', (result) => {
+						this.log('info', 'Preset Load Result: ' + result);
+					});
+				} else
+				if (this.deviceType === this.DTYPE_MX2) {
+					this.sendCommand('CALL /MEDIA/PRESET/' + opt.preset.toString() + ':load()', (result) => {
+						this.log('info', 'Preset Load Result: ' + result);
+					});
+				}
+			}
+		}
 
 		this.setActions(actions)
 	}
@@ -110,7 +136,7 @@ class instance extends instance_skel {
 
 	initGENERAL() {
 		this.sendCommand('GET /MEDIA/VIDEO/*.Text', (result) => {
-			let list = result.split(/\r\n/);
+			let list = result.split(/\r\n/)
 
 			this.CHOICES_INPUTS.length = 0;
 			this.CHOICES_OUTPUTS.length = 0;
@@ -133,6 +159,19 @@ class instance extends instance_skel {
 			}
 			this.initActions()
 		});
+		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
+			let list = result.split(/\r\n/)
+
+			this.CHOICES_PRESETS = list
+				.filter(item => {
+					return item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/) !== undefined
+				})
+				.map(item => {
+					let [all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
+					return {id: preset, label: name}
+				})
+			this.initActions()
+		})
 	}
 
 	initMX2() {
@@ -158,6 +197,19 @@ class instance extends instance_skel {
 					}
 				}
 			}
+			this.initActions()
+		})
+		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
+			let list = result.split(/\r\n/)
+
+			this.CHOICES_PRESETS = list
+				.filter(item => {
+					return item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/) !== undefined
+				})
+				.map(item => {
+					let [all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
+					return {id: preset, label: name}
+				})
 			this.initActions()
 		})
 	}
