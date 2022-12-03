@@ -18,6 +18,7 @@
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"author": "Håkon Nessjøen <haakon@bitfocus.io>",
+	"contributors": ["Dorian Meid <meid@backstage.org>"],
 	"license": "MIT",
 	"homepage": "https://github.com/bitfocus/companion-module-lightware-lw3#readme",
 	"bugs": {
