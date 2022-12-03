@@ -14,6 +14,7 @@ class instance extends instance_skel {
 	DTYPE_MX2 = 'MX2'
 
 	actions = {}
+	state = { destinationConnectionList: []}
 
 	deviceType = this.DTYPE_UNKNOWN
 	inputs = {}
@@ -25,6 +26,7 @@ class instance extends instance_skel {
 	constructor(system, id, config) {
 		super(system, id, config)
 		this.initActions()
+		this.initFeedbacks()
 	}
 
 	config_fields() {
@@ -57,6 +59,7 @@ class instance extends instance_skel {
 	init() {
 		this.status(this.STATE_UNKNOWN);
 		this.initTCP()
+		this.checkFeedbacks()
 	}
 
 	initActions() {
@@ -112,9 +115,49 @@ class instance extends instance_skel {
 		this.setActions(this.actions)
 	}
 
+	initFeedbacks() {
+		let instance = this
+		const feedbacks = {}
+		feedbacks['route'] = {
+			type: 'boolean',
+			label: 'Route',
+			description: 'Shows if an input is routed to an output',
+			style: {
+					color: instance.rgb(0, 0, 0),
+					bgcolor: instance.rgb(255, 0, 0)
+			},
+			options: [
+				{
+					type: 'number',
+					label: 'Input',
+					id: 'input',
+					default: 1,
+					min: 1,
+					max: 512,
+				},
+				{
+					type: 'number',
+					label: 'Output',
+					id: 'output',
+					default: 1,
+					min: 1,
+					max: 512,
+				},
+			],
+			callback: function (feedback) {
+				if (instance.state.destinationConnectionList[feedback.options.output - 1] === 'I'+feedback.options.input ) {
+					return true
+				} else {
+					return false
+						}
+				}
+		}
+		this.setFeedbackDefinitions(feedbacks);
+	}
+
 	initDevice() {
 		this.sendCommand('GET /.ProductName', (result) => {
-			result = result.replace(/\/\.ProductName=/,'');
+			result = result.replace(/^.+ProductName=/,'');
 
 			this.log('info', 'Connected to an ' + result);
 
@@ -180,22 +223,28 @@ class instance extends instance_skel {
 					}
 				}
 			}
-			this.setActions(this.actions)
+			this.initActions()
 		});
 		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
 			let list = result.split(/\r\n/)
 
-			this.CHOICES_PRESETS = list
+			this.CHOICES_PRESETS = [ ...list
 				.filter(item => {
 					return item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/) !== undefined
 				})
 				.map(item => {
-					let [all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
+					let [_all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
 					return {id: preset, label: name}
 				})
-			this.setActions(this.actions)
+			]
+			console.log('actions', JSON.stringify(this.actions));
+			this.initActions()
 		})
 		this.sendCommand('OPEN /MEDIA/VIDEO/XP', (result) => { })
+		this.sendCommand('GET /MEDIA/VIDEO/XP.DestinationConnectionList', (result) => { 
+			result.split(/\r\n/).forEach(line => this.parseResponse(line))
+			this.checkFeedbacks('route')
+		})	
 	}
 
 	initMX2() {
@@ -221,7 +270,7 @@ class instance extends instance_skel {
 					}
 				}
 			}
-			this.setActions(this.actions)
+			this.initActions()
 		})
 		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -231,12 +280,16 @@ class instance extends instance_skel {
 					return item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/) !== undefined
 				})
 				.map(item => {
-					let [all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
+					let [_all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
 					return {id: preset, label: name}
 				})
-			this.setActions(this.actions)
+			this.initActions()
 		})
 		this.sendCommand('OPEN /MEDIA/XP/VIDEO', (result) => { })
+		this.sendCommand('GET /MEDIA/XP/VIDEO.DestinationConnectionList', (result) => { 
+			result.split(/\r\n/).forEach(line => this.parseResponse(line))
+			this.checkFeedbacks('route')
+		})	
 	}
 
 	initTCP() {
@@ -275,26 +328,23 @@ class instance extends instance_skel {
 				receivebuffer += chunk;
 
 				while ( (i = receivebuffer.indexOf('\r\n', offset)) !== -1) {
-					line = receivebuffer.substring(offset, i);
+					line = receivebuffer.substring(offset, i)
 					offset = i + 2;
-					console.log('got line', line.toString());
-					this.socket.emit('receiveline', line.toString());
+					this.socket.emit('receiveline', line.toString())
 				}
-				receivebuffer = receivebuffer.slice(offset);
+				receivebuffer = receivebuffer.slice(offset)
 			});
 
 			this.socket.on('receiveline', (line) => {
+				console.log('got line', line.toString())
 				
-				if (instance.pstate == instance.PSTATE_READY) {
-					if (line.slice(0, 1) == '{') {
-						instance.pstate = instance.PSTATE_MULTILINE;
-						instance.multiline = '';
-						instance.multilineError = '';
-						instance.pid = line.slice(1);
-					}
-				}
-				else if (instance.pstate == instance.PSTATE_MULTILINE) {
-					if (line == '}') {
+				if (instance.pstate === instance.PSTATE_READY && line.startsWith('{')) {
+					instance.pstate = instance.PSTATE_MULTILINE;
+					instance.multiline = '';
+					instance.multilineError = '';
+					instance.pid = line.slice(1);
+				} else if (instance.pstate === instance.PSTATE_MULTILINE) {
+					if (line === '}') {
 						if (instance.responseHandlers[this.pid] !== undefined) {
 							if (instance.multilineError.trim() != '') {
 								instance.log('error', 'Error from device: ' + instance.multilineError);
@@ -307,11 +357,13 @@ class instance extends instance_skel {
 						instance.pstate = instance.PSTATE_READY;
 					} else {
 						if (line.slice(1,1) == 'E') {
-							instance.multilineError += line.slice(3) + "\r\n";
+							instance.multilineError += line + "\r\n";
 						} else {
-							instance.multiline += line.slice(3) + "\r\n";
+							instance.multiline += line + "\r\n";
 						}
 					}
+				} else {
+					this.parseResponse(line)
 				}
 			});
 		}
@@ -345,6 +397,41 @@ class instance extends instance_skel {
 		} else {
 			this.debug('Socket not connected :(');
 		}
+	}
+
+	parseResponse(line) {
+		console.log('parsing', line);
+		let subscriptions = [
+			{
+				pat: '^(pr|CHG).+\\.DestinationConnectionList=I\\d+',
+				fun: (res) => {
+					let inputs = res.replace(/^.+DestinationConnectionList=/, '').split(';')
+					if (inputs[0].match(/^I\d+$/)) {
+						this.state.destinationConnectionList = inputs
+					}
+				},
+				fbk: 'route',
+			}
+		]
+		let updateGui = false
+		subscriptions
+			.filter((sub) => {
+					const regexp = new RegExp(sub.pat)
+					if (line.match(regexp)) {
+						return true
+					}
+					return false
+				})
+			.forEach(sub => {
+				if (sub.fun && typeof sub.fun === 'function') {
+					let update = sub.fun(line)
+					if (update === true) updateGui = true
+				}
+				if (sub.fbk && typeof sub.fbk === 'string') {
+					this.checkFeedbacks(sub.fbk)
+				}
+			})
+
 	}
 
 	updateConfig(config) {
