@@ -13,6 +13,8 @@ class instance extends instance_skel {
 	DTYPE_GENERAL = 'GENERAL'
 	DTYPE_MX2 = 'MX2'
 
+	actions = {}
+
 	deviceType = this.DTYPE_UNKNOWN
 	inputs = {}
 	outputs = {}
@@ -58,9 +60,7 @@ class instance extends instance_skel {
 	}
 
 	initActions() {
-		let actions = {}
-
-		actions['xpt'] = {
+		this.actions['xpt'] = {
 			label: 'XP:Switch - Select video input for output',
 			options: [
 				{
@@ -83,7 +83,7 @@ class instance extends instance_skel {
 				this[this.deviceType + '_XPT'](opt)
 			},
 		}
-		actions['preset'] = {
+		this.actions['preset'] = {
 			label: 'Recall Preset',
 			options: [
 				{
@@ -109,7 +109,7 @@ class instance extends instance_skel {
 			}
 		}
 
-		this.setActions(actions)
+		this.setActions(this.actions)
 	}
 
 	initDevice() {
@@ -132,6 +132,29 @@ class instance extends instance_skel {
 				this.initMX2();
 			}
 		})
+		// The following actions are added only if the device has the corredponding paths
+		this.sendCommand('GET /MEDIA/USB/USBSWITCH.*', (result) => {
+			let list = result.split(/\r\n/)
+			if (list.find(item => item.match(/Enable\d+=/))) {
+				let hosts = list.filter(item => item.match(/Enable\d+=/)).map(item => item.match(/Enable(\d+)=/)[1])
+				this.actions['switchUSB'] = {
+					label: 'Switch USB Host',
+					options: [{
+						id: 'host',
+						type: 'dropdown',
+						label: 'Host',
+						choices: [{id: '0', label: 'Off'}, ...hosts.map(host => { return { id: host, label: 'PC ' + host } })],
+						default: '0',
+					}],
+					callback: (action) => {
+						this.sendCommand('SET /MEDIA/USB/USBSWITCH.HostSelect=' + action.options.host.toString(), (result) => {
+						this.log('info', 'Switch USB Result: ' + result);
+					})
+					}
+				}
+			}
+		})
+
 	}
 
 	initGENERAL() {
@@ -157,7 +180,7 @@ class instance extends instance_skel {
 					}
 				}
 			}
-			this.initActions()
+			this.setActions(this.actions)
 		});
 		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -170,8 +193,9 @@ class instance extends instance_skel {
 					let [all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
 					return {id: preset, label: name}
 				})
-			this.initActions()
+			this.setActions(this.actions)
 		})
+		this.sendCommand('OPEN /MEDIA/VIDEO/XP', (result) => { })
 	}
 
 	initMX2() {
@@ -197,7 +221,7 @@ class instance extends instance_skel {
 					}
 				}
 			}
-			this.initActions()
+			this.setActions(this.actions)
 		})
 		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -210,8 +234,9 @@ class instance extends instance_skel {
 					let [all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
 					return {id: preset, label: name}
 				})
-			this.initActions()
+			this.setActions(this.actions)
 		})
+		this.sendCommand('OPEN /MEDIA/XP/VIDEO', (result) => { })
 	}
 
 	initTCP() {
