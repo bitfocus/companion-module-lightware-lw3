@@ -16,7 +16,8 @@ class instance extends instance_skel {
 
 	actions = {}
 	variables = {}
-	state = { destinationConnectionList: []}
+	presets = {}
+	state = { destinationConnectionList: [], selectedSource: '', selectedDestination: ''}
 
 	deviceType = this.DTYPE_UNKNOWN
 	inputs = {}
@@ -61,6 +62,7 @@ class instance extends instance_skel {
 	init() {
 		this.status(this.STATE_UNKNOWN)
 		this.initTCP()
+		this.initPresets()
 		this.checkFeedbacks()
 	}
 
@@ -113,6 +115,46 @@ class instance extends instance_skel {
 				}
 			}
 		}
+		this.actions['selectSource'] = {
+			label: 'Select source for take',
+			options: [
+				{
+					label: 'Source',
+					type: 'dropdown',
+					id: 'port',
+					choices: this.CHOICES_INPUTS,
+					default: this.CHOICES_INPUTS[0]?.id || ''
+				}
+			],
+			callback: (action) => {
+				this.state.selectedSource = action.options.port
+				this.checkFeedbacks('sourceSelected', 'route')
+			},
+		}
+		this.actions['selectDestination'] = {
+			label: 'Select destination for take',
+			options: [
+				{
+					label: 'Destination',
+					type: 'dropdown',
+					id: 'port',
+					choices: this.CHOICES_OUTPUTS,
+					default: this.CHOICES_OUTPUTS[0]?.id || ''
+				}
+			],
+			callback: (action) => {
+				this.state.selectedDestination = action.options.port
+				this.checkFeedbacks('destinationSelected', 'route')
+			},
+		}
+		this.actions['takeSalvo'] = {
+			label: 'Route selected ports',
+			callback: (action) => {
+				if (this.state.selectedSource.match(/^I\d+$/) && this.state.selectedDestination.match(/^O\d+$/)) {
+					this[this.deviceType + '_XPT']({ input: this.state.selectedSource, output: this.state.selectedDestination })
+				}	
+			},
+		}
 
 		this.setActions(this.actions)
 	}
@@ -133,32 +175,113 @@ class instance extends instance_skel {
 					type: 'number',
 					label: 'Input',
 					id: 'input',
+					tooltip: '0 = selected',
 					default: 1,
-					min: 1,
+					min: 0,
 					max: 512,
 				},
 				{
 					type: 'number',
 					label: 'Output',
 					id: 'output',
+					tooltip: '0 = selected',
 					default: 1,
-					min: 1,
+					min: 0,
 					max: 512,
 				},
 			],
 			callback: function (feedback) {
-				if (instance.state.destinationConnectionList[feedback.options.output - 1] === 'I'+feedback.options.input ) {
+				let outputnum = feedback.options.output > 0 ? feedback.options.output : instance.state.selectedDestination.replace(/\D/g, '')
+				let input = feedback.options.input > 0 ? 'I'+feedback.options.input : instance.state.selectedSource
+				if (instance.state.destinationConnectionList[outputnum - 1] === input ) {
 					return true
 				} else {
 					return false
 						}
 				}
 		}
+		feedbacks['sourceSelected'] = {
+			type: 'boolean',
+			label: 'source selected',
+			description: 'Shows if an input is selected for routing',
+			style: {
+					color: instance.rgb(0, 0, 0),
+					bgcolor: instance.rgb(0, 255, 0)
+			},
+			options: [
+				{
+					type: 'number',
+					label: 'Input',
+					id: 'port',
+					default: 1,
+					min: 1,
+					max: 512,
+				},
+			],
+			callback: function (feedback) {
+				if (instance.state.selectedSource === 'I'+feedback.options.port ) {
+					return true
+				} else {
+					return false
+						}
+				}
+		}
+		feedbacks['destinationSelected'] = {
+			type: 'boolean',
+			label: 'destination selected',
+			description: 'Shows if an output is selected for routing',
+			style: {
+					color: instance.rgb(0, 0, 0),
+					bgcolor: instance.rgb(0, 255, 0)
+			},
+			options: [
+				{
+					type: 'number',
+					label: 'Output',
+					id: 'port',
+					default: 1,
+					min: 1,
+					max: 512,
+				},
+			],
+			callback: function (feedback) {
+				if (instance.state.selectedDestination === 'O'+feedback.options.port ) {
+					return true
+				} else {
+					return false
+						}
+				}
+		}
+
 		this.setFeedbackDefinitions(feedbacks)
 	}
 
 	initVariables() {
 		this.setVariableDefinitions( keys(this.variables).map(key => {return {name: key, label: this.variables[key]}}))
+	}
+
+	updatePresets() {
+		this.setPresetDefinitions( keys(this.presets).map(key => this.presets[key]))
+	}
+
+	initPresets() {
+		this.presets['take'] = {
+			label: 'Take Selected',
+			category: 'Misc',
+			bank: {
+				text: 'Take selected',
+				style: 'text',
+				size: 'auto',
+				color: this.rgb(0, 0, 0),
+				bgcolor: this.rgb(180,30,30)
+			},
+			actions: [{
+				action: 'takeSalvo',
+			}],
+			release_actions: [],
+			feedbacks: [],
+		}
+		this.updatePresets()
 	}
 
 	initDevice() {
@@ -287,10 +410,12 @@ class instance extends instance_skel {
 						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
 						this.variables['sourcename_' + port] = 'Name of source at output ' + port.slice(1)
 					}
+					this.createSelectPreset(port)
 				}
 			}
 			this.initActions()
 			this.initVariables()
+			this.updatePresets()
 		})
 		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -340,10 +465,12 @@ class instance extends instance_skel {
 						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
 						this.variables['sourcename_' + port] = 'Name of source at output ' + port.slice(1)
 					}
+					this.createSelectPreset(port)
 				}
 			}
 			this.initActions()
 			this.initVariables()
+			this.updatePresets()
 		})
 		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -544,6 +671,108 @@ class instance extends instance_skel {
 			this.initTCP()
 		}
 	}
+
+	createSelectPreset(port) {
+		let pdat = {
+			port,
+			num: parseInt(port.replace(/\D/g, '')),
+			shorttype: port.charAt(0),
+		}
+		pdat.type = { I: 'Input', O: 'Output' }[pdat.shorttype] || ''
+		pdat.action = { I: 'selectSource', O: 'selectDestination' }[pdat.shorttype] || ''
+		pdat.option = { I: 'source', O: 'destination' }[pdat.shorttype] || ''
+
+		this.presets['selection' + port] = {
+			label: 'Select ' + pdat.type + ' ' + pdat.num,
+			category: 'Select ' + pdat.type,
+			bank: {
+				text: `${pdat.type}\\n$(${this.label}:name_${pdat.port})`,
+				style: 'text',
+				size: 'auto',
+				color: this.rgb(255, 255, 255),
+				bgcolor: this.rgb(30,30,30)
+			},
+			actions: [{
+				action: pdat.action,
+				options: {
+					port: pdat.port
+				}
+			}],
+			release_actions: [],
+			feedbacks: [
+				{
+					type: pdat.option + 'Selected',
+					options: {
+						port: pdat.num
+					},
+					style: {
+						color: this.rgb(0, 255, 0),
+						bgcolor: this.rgb(0, 70, 0),
+
+					}
+				},
+				{
+					type: 'route',
+					options: {
+						input: pdat.shorttype === 'I' ? pdat.num : 0,
+						output: pdat.shorttype === 'O' ? pdat.num : 0
+					},
+					style: {
+						bgcolor: this.rgb(150,0,0),
+					}
+				}
+			]
+		}
+
+		if(pdat.shorttype === 'I')
+		this.presets['selectAndTake' + port] = {
+			label: 'Select Input ' + pdat.num + ' and Take',
+			category: 'Select Input and Take',
+			bank: {
+				text: `Input\\n$(${this.label}:name_${pdat.port})`,
+				style: 'text',
+				size: 'auto',
+				color: this.rgb(255, 255, 255),
+				bgcolor: this.rgb(60,0,0)
+			},
+			actions: [
+				{
+					action: pdat.action,
+					options: {
+						port: pdat.port
+					}
+				},
+				{
+					action: 'takeSalvo',
+				}
+			],
+			release_actions: [],
+			feedbacks: [
+				{
+					type: pdat.option + 'Selected',
+					options: {
+						port: pdat.num
+					},
+					style: {
+						color: this.rgb(0, 255, 0),
+						bgcolor: this.rgb(0, 70, 0),
+
+					}
+				},
+				{
+					type: 'route',
+					options: {
+						input: pdat.shorttype === 'I' ? pdat.num : 0,
+						output: pdat.shorttype === 'O' ? pdat.num : 0
+					},
+					style: {
+						bgcolor: this.rgb(150,0,0),
+					}
+				}
+			]
+		}
+	}
+
 }
 
 exports = module.exports = instance
