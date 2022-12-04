@@ -1,5 +1,6 @@
 const tcp = require('../../tcp')
 const instance_skel = require('../../instance_skel')
+const { keys } = require('lodash')
 
 // https://lightware.com/pub/media/lightware/filedownloader/file/Lightware_s_Open_API_Environment_v1.pdf
 // https://lightware.com/pub/media/lightware/filedownloader/file/User-Manual/MX2-8x8-HDMI20_series_Users_Manual_v2.4.pdf
@@ -14,6 +15,7 @@ class instance extends instance_skel {
 	DTYPE_MX2 = 'MX2'
 
 	actions = {}
+	variables = {}
 	state = { destinationConnectionList: []}
 
 	deviceType = this.DTYPE_UNKNOWN
@@ -155,6 +157,10 @@ class instance extends instance_skel {
 		this.setFeedbackDefinitions(feedbacks);
 	}
 
+	initVariables() {
+		this.setVariableDefinitions( keys(this.variables).map(key => {return {name: key, label: this.variables[key]}}))
+	}
+
 	initDevice() {
 		this.sendCommand('GET /.ProductName', (result) => {
 			result = result.replace(/^.+ProductName=/,'');
@@ -222,6 +228,7 @@ class instance extends instance_skel {
 	}
 
 	initGENERAL() {
+		this.sendCommand('OPEN /MEDIA/VIDEO/*.Text', (result) => { })
 		this.sendCommand('GET /MEDIA/VIDEO/*.Text', (result) => {
 			let list = result.split(/\r\n/)
 
@@ -237,14 +244,21 @@ class instance extends instance_skel {
 					if (port.match(/I\d+/)) {
 						this.inputs[port] = name;
 						this.CHOICES_INPUTS.push({ label: name, id: port });
+						this.variables['name_' + port] = 'Name of input ' + port.slice(1)
+						this.setVariable('name_' + port, name)
 					}
 					if (port.match(/O\d+/)) {
 						this.outputs[port] = name;
 						this.CHOICES_OUTPUTS.push({ label: name, id: port });
+						this.variables['name_' + port] = 'Name of output ' + port.slice(1)
+						this.setVariable('name_' + port, name)
+						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
+						this.variables['sourcename_' + port] = 'Name of source at output ' + port.slice(1)
 					}
 				}
 			}
 			this.initActions()
+			this.initVariables()
 		});
 		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -270,28 +284,35 @@ class instance extends instance_skel {
 
 	initMX2() {
 		this.sendCommand('GET /MEDIA/NAMES/VIDEO.*', (result) => {
-			let list = result.split(/\r\n/);
+			let list = result.split(/\r\n/)
 
-			this.CHOICES_INPUTS.length = 0;
-			this.CHOICES_OUTPUTS.length = 0;
+			this.CHOICES_INPUTS.length = 0
+			this.CHOICES_OUTPUTS.length = 0
 
 			for (let i in list) {
-				let match = list[i].match(/\/MEDIA\/NAMES\/VIDEO\.(.+?)=\d+;(.+)$/);
+				let match = list[i].match(/\/MEDIA\/NAMES\/VIDEO\.(.+?)=\d+;(.+)$/)
 				if (match) {
-					let port = match[1];
-					let name = match[2];
+					let port = match[1]
+					let name = match[2]
 
 					if (port.match(/I\d+/)) {
-						this.inputs[port] = name;
-						this.CHOICES_INPUTS.push({ label: name, id: port });
+						this.inputs[port] = name
+						this.CHOICES_INPUTS.push({ label: name, id: port })
+						this.variables['name_' + port] = 'Name of input ' + port.slice(1)
+						this.setVariable('name_' + port, name)
 					}
 					if (port.match(/O\d+/)) {
 						this.outputs[port] = name;
-						this.CHOICES_OUTPUTS.push({ label: name, id: port });
+						this.CHOICES_OUTPUTS.push({ label: name, id: port })
+						this.variables['name_' + port] = 'Name of output ' + port.slice(1)
+						this.setVariable('name_' + port, name)
+						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
+						this.variables['sourcename_' + port] = 'Name of source at output ' + port.slice(1)
 					}
 				}
 			}
 			this.initActions()
+			this.initVariables()
 		})
 		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
 			let list = result.split(/\r\n/)
@@ -429,10 +450,33 @@ class instance extends instance_skel {
 					let inputs = res.replace(/^.+DestinationConnectionList=/, '').split(';')
 					if (inputs[0].match(/^I\d+$/)) {
 						this.state.destinationConnectionList = inputs
+						this.setVariables(Object.fromEntries(inputs.map((value, index) => ['source_O' + (index + 1), value])))
+						this.setVariables(Object.fromEntries(inputs.map((value, index) => ['sourcename_O'+(index+1), this.inputs[value]])))
 					}
 				},
 				fbk: 'route',
-			}
+			},
+			{
+				pat: '^(pr|CHG).+\\/MEDIA\\/VIDEO\\/(I|O)\\d+\\.Text=',
+				fun: (res) => {
+					let [port, label] = res.replace(/^.+\/MEDIA\/VIDEO\//, '').split('.Text=')
+					if (port.match(/^I\d+$/)) {
+						this.inputs[port] = label
+						this.setVariable('name_' + port, label)
+						this.state.destinationConnectionList
+							.map((input, index) => { return { in: input, out: 'O' + (index + 1) } })
+							.filter(item => item.in === port)
+							.forEach(item => {
+								this.setVariable('sourcename_'+item.out, label)
+							})
+					}
+					if (port.match(/^O\d+$/)) {
+						this.outputs[port] = label
+						this.setVariable('name_'+port, label)
+					}
+					return true
+				}
+			},			
 		]
 		let updateGui = false
 		subscriptions
@@ -452,6 +496,10 @@ class instance extends instance_skel {
 					this.checkFeedbacks(sub.fbk)
 				}
 			})
+		if (updateGui) {
+			this.initActions()
+			this.initFeedbacks()
+		}
 
 	}
 
