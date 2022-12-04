@@ -59,7 +59,7 @@ class instance extends instance_skel {
 	}
 
 	init() {
-		this.status(this.STATE_UNKNOWN);
+		this.status(this.STATE_UNKNOWN)
 		this.initTCP()
 		this.checkFeedbacks()
 	}
@@ -103,13 +103,13 @@ class instance extends instance_skel {
 				let opt = action.options
 				if (this.deviceType === this.DTYPE_GENERAL) {
 					this.sendCommand('CALL /PRESETS/AVC:load(' + opt.preset.toString() + ')', (result) => {
-						this.log('info', 'Preset Load Result: ' + result);
-					});
+						this.log('info', 'Preset Load Result: ' + result)
+					})
 				} else
 				if (this.deviceType === this.DTYPE_MX2) {
 					this.sendCommand('CALL /MEDIA/PRESET/' + opt.preset.toString() + ':load()', (result) => {
-						this.log('info', 'Preset Load Result: ' + result);
-					});
+						this.log('info', 'Preset Load Result: ' + result)
+					})
 				}
 			}
 		}
@@ -154,7 +154,7 @@ class instance extends instance_skel {
 						}
 				}
 		}
-		this.setFeedbackDefinitions(feedbacks);
+		this.setFeedbackDefinitions(feedbacks)
 	}
 
 	initVariables() {
@@ -163,25 +163,57 @@ class instance extends instance_skel {
 
 	initDevice() {
 		this.sendCommand('GET /.ProductName', (result) => {
-			result = result.replace(/^.+ProductName=/,'');
+			result = result.replace(/^.+ProductName=/,'')
 
-			this.log('info', 'Connected to an ' + result);
+			this.log('info', 'Connected to an ' + result)
 
 			if (result.match(/OPTC-[TR]X|MMX\d+x\d+|UMX-TPS-[TR]X100/) ||
 				result.match(/(^MEX-)|HDMI-TPS-[TR]X200|HDMI-3D-OPT|SW4-OPT|MODEX/)) {
-				this.deviceType = this.DTYPE_GENERAL;
-				this.initGENERAL();
+				this.deviceType = this.DTYPE_GENERAL
+				this.initGENERAL()
 			}
 			else if (result.match(/^MX2/)) {
-				this.deviceType = this.DTYPE_MX2;
-				this.initMX2();
+				this.deviceType = this.DTYPE_MX2
+				this.initMX2()
 			} else {
-				log('warning', 'Unknown LW3 device, use with caution');
-				this.deviceType = this.DTYPE_GENERAL;
-				this.initMX2();
+				log('warning', 'Unknown LW3 device, use with caution')
+				this.deviceType = this.DTYPE_GENERAL
+				this.initMX2()
 			}
 		})
 		// The following actions are added only if the device has the corredponding paths
+		this.sendCommand('GET /MEDIA/VIDEO/XP.*', (result) => {
+			let list = result.split(/\r\n/)
+			if (list.find(item => item.match(/XP:lockDestination/))) {
+				let outputnum = parseInt(list.find(item => item.match(/XP\.DestinationPortCount=\d+/)).match(/XP\.DestinationPortCount=(\d+)$/)[1])
+				this.actions['outputLock'] = {
+					label: 'Output Lock',
+					options: [{
+						id: 'output',
+						type: 'number',
+						label: 'Output',
+						min: 1,
+						max: outputnum,
+						default: 1,
+					},
+					{
+						id: 'cmd',
+						type: 'dropdown',
+						label: 'Lock',
+						choices: [
+							{ id: 'lockDestination', label: 'Lock Output' },
+							{ id: 'unlockDestination', label: 'Unlock Output' }
+						],
+						default: 'unlockDestination',
+					}],
+					callback: (action) => {
+						this.sendCommand(`CALL /MEDIA/VIDEO/XP:${action.options.cmd}(O${action.options.output})` , (result) => {
+						this.log('info', 'Output Lock Result: ' + result)
+					})
+					}
+				}
+			}
+		})
 		this.sendCommand('GET /MEDIA/USB/USBSWITCH.*', (result) => {
 			let list = result.split(/\r\n/)
 			if (list.find(item => item.match(/Enable\d+=/))) {
@@ -197,7 +229,7 @@ class instance extends instance_skel {
 					}],
 					callback: (action) => {
 						this.sendCommand('SET /MEDIA/USB/USBSWITCH.HostSelect=' + action.options.host.toString(), (result) => {
-						this.log('info', 'Switch USB Result: ' + result);
+						this.log('info', 'Switch USB Result: ' + result)
 					})
 					}
 				}
@@ -232,24 +264,24 @@ class instance extends instance_skel {
 		this.sendCommand('GET /MEDIA/VIDEO/*.Text', (result) => {
 			let list = result.split(/\r\n/)
 
-			this.CHOICES_INPUTS.length = 0;
-			this.CHOICES_OUTPUTS.length = 0;
+			this.CHOICES_INPUTS.length = 0
+			this.CHOICES_OUTPUTS.length = 0
 
 			for (let i in list) {
-				let match = list[i].match(/\/MEDIA\/VIDEO\/(.+?)\.Text=(.+)$/);
+				let match = list[i].match(/\/MEDIA\/VIDEO\/(.+?)\.Text=(.+)$/)
 				if (match) {
-					let port = match[1];
-					let name = match[2];
+					let port = match[1]
+					let name = match[2]
 
 					if (port.match(/I\d+/)) {
-						this.inputs[port] = name;
-						this.CHOICES_INPUTS.push({ label: name, id: port });
+						this.inputs[port] = name
+						this.CHOICES_INPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of input ' + port.slice(1)
 						this.setVariable('name_' + port, name)
 					}
 					if (port.match(/O\d+/)) {
-						this.outputs[port] = name;
-						this.CHOICES_OUTPUTS.push({ label: name, id: port });
+						this.outputs[port] = name
+						this.CHOICES_OUTPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of output ' + port.slice(1)
 						this.setVariable('name_' + port, name)
 						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
@@ -259,7 +291,7 @@ class instance extends instance_skel {
 			}
 			this.initActions()
 			this.initVariables()
-		});
+		})
 		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
 			let list = result.split(/\r\n/)
 
@@ -272,7 +304,6 @@ class instance extends instance_skel {
 					return {id: preset, label: name}
 				})
 			]
-			console.log('actions', JSON.stringify(this.actions));
 			this.initActions()
 		})
 		this.sendCommand('OPEN /MEDIA/VIDEO/XP', (result) => { })
@@ -302,7 +333,7 @@ class instance extends instance_skel {
 						this.setVariable('name_' + port, name)
 					}
 					if (port.match(/O\d+/)) {
-						this.outputs[port] = name;
+						this.outputs[port] = name
 						this.CHOICES_OUTPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of output ' + port.slice(1)
 						this.setVariable('name_' + port, name)
@@ -336,92 +367,91 @@ class instance extends instance_skel {
 
 	initTCP() {
 		let instance = this
-		let receivebuffer = '';
-		this.pstate = this.PSTATE_READY;
-		this.pid = '';
-		this.multiline = '';
-		this.multilineError = '';
-		this.responseHandlers = {};
-		this.sendId = 0;
+		let receivebuffer = ''
+		this.pstate = this.PSTATE_READY
+		this.pid = ''
+		this.multiline = ''
+		this.multilineError = ''
+		this.responseHandlers = {}
+		this.sendId = 0
 
 		if (this.socket !== undefined) {
-			this.socket.destroy();
-			delete this.socket;
+			this.socket.destroy()
+			delete this.socket
 		}
 
 		if (this.config.host) {
-			this.socket = new tcp(this.config.host, 6107);
+			this.socket = new tcp(this.config.host, 6107)
 
 			this.socket.on('status_change', (status, message) => {
-				instance.status(status, message);
-			});
+				instance.status(status, message)
+			})
 
 			this.socket.on('connect', () => {
-				instance.initDevice();
-			});
+				instance.initDevice()
+			})
 
 			this.socket.on('error', (err) => {
-				instance.debug("Network error", err);
-				instance.log('error',"Network error: " + err.message);
-			});
+				instance.debug("Network error", err)
+				instance.log('error',"Network error: " + err.message)
+			})
 
 			this.socket.on('data', (chunk) => {
-				let i = 0, line = '', offset = 0;
-				receivebuffer += chunk;
+				let i = 0, line = '', offset = 0
+				receivebuffer += chunk
 
 				while ( (i = receivebuffer.indexOf('\r\n', offset)) !== -1) {
 					line = receivebuffer.substring(offset, i)
-					offset = i + 2;
+					offset = i + 2
 					this.socket.emit('receiveline', line.toString())
 				}
 				receivebuffer = receivebuffer.slice(offset)
-			});
+			})
 
 			this.socket.on('receiveline', (line) => {
-				console.log('got line', line.toString())
 				
 				if (instance.pstate === instance.PSTATE_READY && line.startsWith('{')) {
-					instance.pstate = instance.PSTATE_MULTILINE;
-					instance.multiline = '';
-					instance.multilineError = '';
-					instance.pid = line.slice(1);
+					instance.pstate = instance.PSTATE_MULTILINE
+					instance.multiline = ''
+					instance.multilineError = ''
+					instance.pid = line.slice(1)
 				} else if (instance.pstate === instance.PSTATE_MULTILINE) {
 					if (line === '}') {
 						if (instance.responseHandlers[this.pid] !== undefined) {
 							if (instance.multilineError.trim() != '') {
-								instance.log('error', 'Error from device: ' + instance.multilineError);
+								instance.log('error', 'Error from device: ' + instance.multilineError)
 							}
 
-							instance.responseHandlers[instance.pid](instance.multiline.trim());
-							delete instance.responseHandlers[instance.pid];
+							instance.responseHandlers[instance.pid](instance.multiline.trim())
+							delete instance.responseHandlers[instance.pid]
 						}
 
-						instance.pstate = instance.PSTATE_READY;
+						instance.pstate = instance.PSTATE_READY
 					} else {
 						if (line.slice(1,1) == 'E') {
-							instance.multilineError += line + "\r\n";
+							instance.multilineError += line + "\r\n"
 						} else {
-							instance.multiline += line + "\r\n";
+							instance.multiline += line + "\r\n"
 						}
 					}
 				} else {
 					this.parseResponse(line)
 				}
-			});
+			})
 		}
 	}
 
 	GENERAL_XPT(opt) {
 		this.sendCommand('CALL /MEDIA/VIDEO/XP:switch(' + opt.input + ':' + opt.output + ')', (result) => {
-			this.log('info', 'XPT Result: ' + result);
-		});
-	};
+			this.log('info', 'XPT Result: ' + result)
+		})
+	}
 
 	MX2_XPT(opt) {
 		this.sendCommand('CALL /MEDIA/XP/VIDEO:switch(' + opt.input + ':' + opt.output + ')', (result) => {
-			this.log('info', 'XPT Result: ' + result);
-		});
-	};
+			this.log('info', 'XPT Result: ' + result)
+		})
+	}
 
 
 	sendCommand(command, cb) {
@@ -433,16 +463,14 @@ class instance extends instance_skel {
 		let id = this.sendId.toString().padStart(4, '0')
 
 		if (this.socket !== undefined && this.socket.connected) {
-			this.socket.send(id + '#' + command + "\r\n");
-			this.responseHandlers[id] = cb;
-			console.log('sent cmd', id + '#' + command);
+			this.socket.send(id + '#' + command + "\r\n")
+			this.responseHandlers[id] = cb
 		} else {
-			this.debug('Socket not connected :(');
+			this.debug('Socket not connected :(')
 		}
 	}
 
 	parseResponse(line) {
-		console.log('parsing', line);
 		let subscriptions = [
 			{
 				pat: '^(pr|CHG).+\\.DestinationConnectionList=I\\d+',
