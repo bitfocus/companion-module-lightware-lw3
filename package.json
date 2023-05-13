@@ -1,31 +1,19 @@
 {
 	"name": "lightware-lw3",
-	"legacy": [
-		"lightware3"
-	],
-	"version": "1.1.0",
-	"api_version": "1.0.0",
-	"keywords": [
-		"Protocol",
-		"Matrix"
-	],
-	"manufacturer": "Lightware",
-	"product": "LW3",
-	"shortname": "lightwareLW3",
-	"description": "Control Lightware LW3 Equipment",
+	"version": "2.0.0",
 	"main": "index.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
-	"author": "Håkon Nessjøen <haakon@bitfocus.io>",
-	"contributors": ["Dorian Meid <meid@backstage.org>"],
 	"license": "MIT",
-	"homepage": "https://github.com/bitfocus/companion-module-lightware-lw3#readme",
-	"bugs": {
-		"url": "https://github.com/bitfocus/companion-module-lightware-lw3/issues"
-	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/bitfocus/companion-module-lightware-lw3.git"
+	},
+	"dependencies": {
+		"@companion-module/base": "~1.4.1"
+	},
+	"devDependencies": {
+		"@companion-module/tools": "^1.2.1"
 	}
 }
