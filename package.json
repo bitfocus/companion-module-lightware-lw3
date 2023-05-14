@@ -1,6 +1,6 @@
 {
 	"name": "lightware-lw3",
-	"version": "2.0.0",
+	"version": "2.0.1",
 	"main": "index.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1"
@@ -11,7 +11,8 @@
 		"url": "git+https://github.com/bitfocus/companion-module-lightware-lw3.git"
 	},
 	"dependencies": {
-		"@companion-module/base": "~1.4.1"
+		"@companion-module/base": "~1.4.1",
+		"lodash": "^4.17.21"
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^1.2.1"
