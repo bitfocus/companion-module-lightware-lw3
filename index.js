@@ -1,4 +1,3 @@
-const { keys } = require('lodash')
 const { InstanceBase, InstanceStatus, runEntrypoint, TCPHelper, combineRgb } = require('@companion-module/base')
 
 // https://lightware.com/pub/media/lightware/filedownloader/file/Lightware_s_Open_API_Environment_v1.pdf
@@ -27,6 +26,7 @@ class instance extends InstanceBase {
 
 	constructor(internal) {
 		super(internal)
+		this.instanceOptions.disableVariableValidation = true
 	}
 
 	getConfigFields() {
@@ -62,13 +62,12 @@ class instance extends InstanceBase {
 		this.updateStatus(InstanceStatus.Connecting)
 		this.initTCP()
 		this.initVariables()
+		this.initFeedbacks()
 		this.initPresets()
 	}
 
 	initActions() {
-		const actions = {}
-
-		actions['xpt'] = {
+		this.actions['xpt'] = {
 			name: 'XP:Switch - Select video input for output',
 			options: [
 				{
@@ -91,7 +90,7 @@ class instance extends InstanceBase {
 				this[this.deviceType + '_XPT'](opt)
 			},
 		}
-		actions['preset'] = {
+		this.actions['preset'] = {
 			name: 'Recall Preset',
 			options: [
 				{
@@ -115,7 +114,7 @@ class instance extends InstanceBase {
 				}
 			},
 		}
-		actions['selectSource'] = {
+		this.actions['selectSource'] = {
 			name: 'Select source for take',
 			options: [
 				{
@@ -131,7 +130,7 @@ class instance extends InstanceBase {
 				this.checkFeedbacks('sourceSelected', 'route')
 			},
 		}
-		actions['selectDestination'] = {
+		this.actions['selectDestination'] = {
 			name: 'Select destination for take',
 			options: [
 				{
@@ -147,7 +146,7 @@ class instance extends InstanceBase {
 				this.checkFeedbacks('destinationSelected', 'route')
 			},
 		}
-		actions['takeSalvo'] = {
+		this.actions['takeSalvo'] = {
 			name: 'Route selected ports',
 			options: [],
 			callback: () => {
@@ -157,7 +156,7 @@ class instance extends InstanceBase {
 			},
 		}
 
-		this.setActionDefinitions(actions)
+		this.setActionDefinitions(this.actions)
 	}
 
 	initFeedbacks() {
@@ -192,12 +191,19 @@ class instance extends InstanceBase {
 				},
 			],
 			callback: (feedback) => {
-				let outputnum =
-					feedback.options.output > 0 ? feedback.options.output : instance.state.selectedDestination.replace(/\D/g, '')
-				let input = feedback.options.input > 0 ? 'I' + feedback.options.input : instance.state.selectedSource
-				if (instance.state.destinationConnectionList[outputnum - 1] === input) {
-					return true
-				} else {
+				try {
+					let outputnum =
+						feedback.options.output > 0
+							? feedback.options.output
+							: instance.state.selectedDestination.replace(/\D/g, '')
+					let input = feedback.options.input > 0 ? 'I' + feedback.options.input : instance.state.selectedSource
+					if (instance.state.destinationConnectionList[outputnum - 1] === input) {
+						return true
+					} else {
+						return false
+					}
+				} catch (error) {
+					this.log('error', 'trying to read feedback status for a invalid input or output')
 					return false
 				}
 			},
@@ -221,9 +227,14 @@ class instance extends InstanceBase {
 				},
 			],
 			callback: (feedback) => {
-				if (instance.state.selectedSource === 'I' + feedback.options.port) {
-					return true
-				} else {
+				try {
+					if (instance.state.selectedSource === 'I' + feedback.options.port) {
+						return true
+					} else {
+						return false
+					}
+				} catch (error) {
+					this.log('error', 'trying to read feedback status for a invalid input or output')
 					return false
 				}
 			},
@@ -247,9 +258,14 @@ class instance extends InstanceBase {
 				},
 			],
 			callback: (feedback) => {
-				if (instance.state.selectedDestination === 'O' + feedback.options.port) {
-					return true
-				} else {
+				try {
+					if (instance.state.selectedDestination === 'O' + feedback.options.port) {
+						return true
+					} else {
+						return false
+					}
+				} catch (error) {
+					this.log('error', 'trying to read feedback status for a invalid input or output')
 					return false
 				}
 			},
@@ -260,33 +276,79 @@ class instance extends InstanceBase {
 
 	initVariables() {
 		this.setVariableDefinitions(
-			keys(this.variables).map((key) => {
+			Object.keys(this.variables).map((key) => {
 				return { variableId: key, name: this.variables[key] }
 			})
 		)
 	}
 
-	initPresets(port) {
-		const presets = {}
-		if (port) {
-			let pdat = {
-				port,
-				num: parseInt(port.replace(/\D/g, '')),
-				shorttype: port.charAt(0),
-			}
-			pdat.type = { I: 'Input', O: 'Output' }[pdat.shorttype] || ''
-			pdat.action = { I: 'selectSource', O: 'selectDestination' }[pdat.shorttype] || ''
-			pdat.option = { I: 'source', O: 'destination' }[pdat.shorttype] || ''
+	createSelectPreset(port) {
+		let pdat = {
+			port,
+			num: parseInt(port.replace(/\D/g, '')),
+			shorttype: port.charAt(0),
+		}
+		pdat.type = { I: 'Input', O: 'Output' }[pdat.shorttype] || ''
+		pdat.action = { I: 'selectSource', O: 'selectDestination' }[pdat.shorttype] || ''
+		pdat.option = { I: 'source', O: 'destination' }[pdat.shorttype] || ''
 
-			presets['selection' + port + pdat.num] = {
-				name: 'Select ' + pdat.type + ' ' + pdat.num,
+		this.presets['selection' + port] = {
+			name: 'Select ' + pdat.type + ' ' + pdat.num,
+			type: 'button',
+			category: 'Select ' + pdat.type,
+			style: {
+				text: `${pdat.type}\\n$(${this.label}:name_${pdat.port})`,
+				size: 'auto',
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(30, 30, 30),
+			},
+			steps: [
+				{
+					down: [
+						{
+							actionId: pdat.action,
+							options: {
+								port: pdat.port,
+							},
+						},
+					],
+					up: [],
+				},
+			],
+			feedbacks: [
+				{
+					feedbackId: pdat.option + 'Selected',
+					options: {
+						port: pdat.num,
+					},
+					style: {
+						color: combineRgb(0, 255, 0),
+						bgcolor: combineRgb(0, 70, 0),
+					},
+				},
+				{
+					feedbackId: 'route',
+					options: {
+						input: pdat.shorttype === 'I' ? pdat.num : 0,
+						output: pdat.shorttype === 'O' ? pdat.num : 0,
+					},
+					style: {
+						bgcolor: combineRgb(150, 0, 0),
+					},
+				},
+			],
+		}
+
+		if (pdat.shorttype === 'I')
+			this.presets['selectAndTake' + port] = {
+				name: 'Select Input ' + pdat.num + ' and Take',
 				type: 'button',
-				category: 'Select ' + pdat.type,
+				category: 'Select Input and Take',
 				style: {
-					text: `${pdat.type}\\n$(${this.label}:name_${pdat.port})`,
+					text: `Input\\n$(${this.label}:name_${pdat.port})`,
 					size: 'auto',
 					color: combineRgb(255, 255, 255),
-					bgcolor: combineRgb(30, 30, 30),
+					bgcolor: combineRgb(60, 0, 0),
 				},
 				steps: [
 					{
@@ -297,13 +359,16 @@ class instance extends InstanceBase {
 									port: pdat.port,
 								},
 							},
+							{
+								actionId: 'takeSalvo',
+							},
 						],
 						up: [],
 					},
 				],
 				feedbacks: [
 					{
-						type: pdat.option + 'Selected',
+						feedbackId: pdat.option + 'Selected',
 						options: {
 							port: pdat.num,
 						},
@@ -313,7 +378,7 @@ class instance extends InstanceBase {
 						},
 					},
 					{
-						type: 'route',
+						feedbackId: 'route',
 						options: {
 							input: pdat.shorttype === 'I' ? pdat.num : 0,
 							output: pdat.shorttype === 'O' ? pdat.num : 0,
@@ -324,59 +389,10 @@ class instance extends InstanceBase {
 					},
 				],
 			}
+	}
 
-			if (pdat.shorttype === 'I')
-				presets['selectAndTake' + port] = {
-					name: 'Select Input ' + pdat.num + ' and Take',
-					type: 'button',
-					category: 'Select Input and Take',
-					style: {
-						text: `Input\\n$(${this.label}:name_${pdat.port})`,
-						size: 'auto',
-						color: combineRgb(255, 255, 255),
-						bgcolor: combineRgb(60, 0, 0),
-					},
-					steps: [
-						{
-							down: [
-								{
-									action: pdat.action,
-									options: {
-										port: pdat.port,
-									},
-								},
-								{
-									action: 'takeSalvo',
-								},
-							],
-							up: [],
-						},
-					],
-					feedbacks: [
-						{
-							type: pdat.option + 'Selected',
-							options: {
-								port: pdat.num,
-							},
-							style: {
-								color: combineRgb(0, 255, 0),
-								bgcolor: combineRgb(0, 70, 0),
-							},
-						},
-						{
-							type: 'route',
-							options: {
-								input: pdat.shorttype === 'I' ? pdat.num : 0,
-								output: pdat.shorttype === 'O' ? pdat.num : 0,
-							},
-							style: {
-								bgcolor: combineRgb(150, 0, 0),
-							},
-						},
-					],
-				}
-		}
-		presets['take'] = {
+	initPresets() {
+		this.presets['take'] = {
 			type: 'button',
 			name: 'Take Selected',
 			type: 'button',
@@ -399,7 +415,7 @@ class instance extends InstanceBase {
 			],
 			feedbacks: [],
 		}
-		this.setPresetDefinitions(presets)
+		this.setPresetDefinitions(this.presets)
 	}
 
 	initDevice() {
@@ -424,80 +440,102 @@ class instance extends InstanceBase {
 			}
 		})
 		// The following actions are added only if the device has the corredponding paths
-		// this.sendCommand('GET /MEDIA/VIDEO/XP.*', (result) => {
-		// 	let list = result.split(/\r\n/)
-		// 	if (list.find(item => item.match(/XP:lockDestination/))) {
-		// 		let outputnum = parseInt(list.find(item => item.match(/XP\.DestinationPortCount=\d+/)).match(/XP\.DestinationPortCount=(\d+)$/)[1])
-		// 		this.actions['outputLock'] = {
-		// 			name: 'Output Lock',
-		// 			options: [{
-		// 				id: 'output',
-		// 				type: 'number',
-		// 				label: 'Output',
-		// 				min: 1,
-		// 				max: outputnum,
-		// 				default: 1,
-		// 			},
-		// 			{
-		// 				id: 'cmd',
-		// 				type: 'dropdown',
-		// 				label: 'Lock',
-		// 				choices: [
-		// 					{ id: 'lockDestination', label: 'Lock Output' },
-		// 					{ id: 'unlockDestination', label: 'Unlock Output' }
-		// 				],
-		// 				default: 'unlockDestination',
-		// 			}],
-		// 			callback: (action) => {
-		// 				this.sendCommand(`CALL /MEDIA/VIDEO/XP:${action.options.cmd}(O${action.options.output})` , (result) => {
-		// 				this.log('info', 'Output Lock Result: ' + result)
-		// 			})
-		// 			}
-		// 		}
-		// 	}
-		// })
-		// this.sendCommand('GET /MEDIA/USB/USBSWITCH.*', (result) => {
-		// 	let list = result.split(/\r\n/)
-		// 	if (list.find(item => item.match(/Enable\d+=/))) {
-		// 		let hosts = list.filter(item => item.match(/Enable\d+=/)).map(item => item.match(/Enable(\d+)=/)[1])
-		// 		this.actions['switchUSB'] = {
-		// 			name: 'Switch USB Host',
-		// 			options: [{
-		// 				id: 'host',
-		// 				type: 'dropdown',
-		// 				label: 'Host',
-		// 				choices: [{id: '0', label: 'Off'}, ...hosts.map(host => { return { id: host, label: 'PC ' + host } })],
-		// 				default: '0',
-		// 			}],
-		// 			callback: (action) => {
-		// 				this.sendCommand('SET /MEDIA/USB/USBSWITCH.HostSelect=' + action.options.host.toString(), (result) => {
-		// 				this.log('info', 'Switch USB Result: ' + result)
-		// 			})
-		// 			}
-		// 		}
-		// 	}
-		// })
-		// this.sendCommand('GET /CTRL/MACROS.*', (result) => {
-		// 	let list = result.split(/\r\n/)
-		// 	if (list.find(item => item.match(/MACROS.\d+=\d+;.+;\w+$/))) {
-		// 		let macros = list.filter(item => item.match(/MACROS.\d+=\d+;.+;\w+$/)).map(item => item.match(/MACROS.\d+=\d+;.+;(\w+)$/)[1])
-		// 		this.actions['runMacro'] = {
-		// 			name: 'Run Macro',
-		// 			options: [{
-		// 				id: 'macro',
-		// 				type: 'dropdown',
-		// 				label: 'Macro',
-		// 				choices: macros.map(macro => { return { id: macro, label: macro } }),
-		// 				default: macros[0],
-		// 			}],
-		// 			callback: (action) => {
-		// 				this.sendCommand('CALL /CTRL/MACROS:run(' + action.options.macro + ')', (result) => {
-		// 				this.log('info', 'Run Macro Result: ' + result)
-		// 			})
-		// 			}
-		// 		}
-		// 	}
-		// })
+		this.sendCommand('GET /MEDIA/VIDEO/XP.*', (result) => {
+			let list = result.split(/\r\n/)
+			if (list.find((item) => item.match(/XP:lockDestination/))) {
+				let outputnum = parseInt(
+					list.find((item) => item.match(/XP\.DestinationPortCount=\d+/)).match(/XP\.DestinationPortCount=(\d+)$/)[1]
+				)
+				this.actions['outputLock'] = {
+					name: 'Output Lock',
+					options: [
+						{
+							id: 'output',
+							type: 'number',
+							label: 'Output',
+							min: 1,
+							max: outputnum,
+							default: 1,
+						},
+						{
+							id: 'cmd',
+							type: 'dropdown',
+							label: 'Lock',
+							choices: [
+								{ id: 'lockDestination', label: 'Lock Output' },
+								{ id: 'unlockDestination', label: 'Unlock Output' },
+							],
+							default: 'unlockDestination',
+						},
+					],
+					callback: (action) => {
+						this.sendCommand(`CALL /MEDIA/VIDEO/XP:${action.options.cmd}(O${action.options.output})`, (result) => {
+							this.log('info', 'Output Lock Result: ' + result)
+						})
+					},
+				}
+			}
+		})
+		this.sendCommand('GET /MEDIA/USB/USBSWITCH.*', (result) => {
+			let list = result.split(/\r\n/)
+			if (list.find((item) => item.match(/Enable\d+=/))) {
+				let hosts = list.filter((item) => item.match(/Enable\d+=/)).map((item) => item.match(/Enable(\d+)=/)[1])
+				this.actions['switchUSB'] = {
+					name: 'Switch USB Host',
+					options: [
+						{
+							id: 'host',
+							type: 'dropdown',
+							label: 'Host',
+							choices: [
+								{ id: '0', label: 'Off' },
+								...hosts.map((host) => {
+									return { id: host, label: 'PC ' + host }
+								}),
+							],
+							default: '0',
+						},
+					],
+					callback: (action) => {
+						this.sendCommand('SET /MEDIA/USB/USBSWITCH.HostSelect=' + action.options.host.toString(), (result) => {
+							this.log('info', 'Switch USB Result: ' + result)
+						})
+					},
+				}
+			}
+		})
+		this.sendCommand('GET /CTRL/MACROS.*', (result) => {
+			const noMacrosMessage = 'No macros available'
+			let list = result.split(/\r\n/)
+			if (list.find((item) => item.match(/MACROS.\d+=/))) {
+				let macros = [noMacrosMessage]
+				if (list.find((item) => item.match(/MACROS.\d+=\d+;.+;\w+$/))) {
+					macros = list
+						.filter((item) => item.match(/MACROS.\d+=\d+;.+;\w+$/))
+						.map((item) => item.match(/MACROS.\d+=\d+;.+;(\w+)$/)[1])
+				}
+				this.actions['runMacro'] = {
+					name: 'Run Macro',
+					options: [
+						{
+							id: 'macro',
+							type: 'dropdown',
+							label: 'Macro',
+							choices: macros.map((macro) => {
+								return { id: macro, label: macro }
+							}),
+							default: macros[0],
+						},
+					],
+					callback: (action) => {
+						if (action.options.macro === noMacrosMessage) return
+						this.sendCommand('CALL /CTRL/MACROS:run(' + action.options.macro + ')', (result) => {
+							this.log('info', 'Run Macro Result: ' + result)
+						})
+					},
+				}
+			}
+		})
 	}
 
 	initGENERAL() {
@@ -518,35 +556,37 @@ class instance extends InstanceBase {
 						this.inputs[port] = name
 						this.CHOICES_INPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of input ' + port.slice(1)
-						this.setVariable('name_' + port, name)
+						this.setVariableValues({ ['name_' + port]: name })
 					}
 					if (port.match(/O\d+/)) {
 						this.outputs[port] = name
 						this.CHOICES_OUTPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of output ' + port.slice(1)
-						this.setVariable('name_' + port, name)
+						this.setVariableValues({ ['name_' + port]: name })
 						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
 						this.variables['sourcename_' + port] = 'Name of source at output ' + port.slice(1)
 					}
-					this.initPresets(port)
+					this.createSelectPreset(port)
 				}
 			}
 			this.initActions()
 			this.initVariables()
+			this.setPresetDefinitions(this.presets)
 		})
 		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
 			let list = result.split(/\r\n/)
-			this.log('debug',list)
+			this.log('debug', list)
 
-			// this.CHOICES_PRESETS = [ ...list
-			// 	.filter(item => {
-			// 		return item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/) !== undefined
-			// 	})
-			// 	.map(item => {
-			// 		let [_all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
-			// 		return {id: preset, label: name}
-			// 	})
-			// ]
+			this.CHOICES_PRESETS = [
+				...list
+					.filter((item) => {
+						return item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/) !== undefined
+					})
+					.map((item) => {
+						let [_all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
+						return { id: preset, label: name }
+					}),
+			]
 			this.initActions()
 		})
 		this.sendCommand('OPEN /MEDIA/VIDEO/XP', (result) => {})
@@ -559,7 +599,7 @@ class instance extends InstanceBase {
 	initMX2() {
 		this.sendCommand('GET /MEDIA/NAMES/VIDEO.*', (result) => {
 			let list = result.split(/\r\n/)
-			this.log('debug',list)
+			this.log('debug', list)
 
 			this.CHOICES_INPUTS.length = 0
 			this.CHOICES_OUTPUTS.length = 0
@@ -574,34 +614,35 @@ class instance extends InstanceBase {
 						this.inputs[port] = name
 						this.CHOICES_INPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of input ' + port.slice(1)
-						this.setVariableValues('name_' + port, name)
+						this.setVariableValues({ ['name_' + port]: name })
 					}
 					if (port.match(/O\d+/)) {
 						this.outputs[port] = name
 						this.CHOICES_OUTPUTS.push({ label: name, id: port })
 						this.variables['name_' + port] = 'Name of output ' + port.slice(1)
-						this.setVariableValues('name_' + port, name)
+						this.setVariableValues({ ['name_' + port]: name })
 						this.variables['source_' + port] = 'Source at output ' + port.slice(1)
 						this.variables['sourcename_' + port] = 'Name of source at output ' + port.slice(1)
 					}
-					this.initPresets(port)
+					this.createSelectPreset(port)
 				}
 			}
 			this.initActions()
 			this.initVariables()
+			this.setPresetDefinitions(this.presets)
 		})
-		// this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
-		// 	let list = result.split(/\r\n/)
-		// 	// this.CHOICES_PRESETS = list
-		// 	// 	.filter(item => {
-		// 	// 		return item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/) !== undefined
-		// 	// 	})
-		// 	// 	.map(item => {
-		// 	// 		let [_all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
-		// 	// 		return {id: preset, label: name}
-		// 	// 	})
-		// 	this.initActions()
-		// })
+		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
+			let list = result.split(/\r\n/)
+			this.CHOICES_PRESETS = list
+				.filter((item) => {
+					return item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/) !== undefined
+				})
+				.map((item) => {
+					let [_all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
+					return { id: preset, label: name }
+				})
+			this.initActions()
+		})
 		this.sendCommand('OPEN /MEDIA/XP/VIDEO', (result) => {})
 		this.sendCommand('GET /MEDIA/XP/VIDEO.DestinationConnectionList', (result) => {
 			result.split(/\r\n/).forEach((line) => this.parseResponse(line))
@@ -714,6 +755,12 @@ class instance extends InstanceBase {
 	}
 
 	parseResponse(line) {
+		/**
+		 * The subscriptions object holds all definitions for responses to react to
+		 * @property pat a string with a regex to check incoming message
+		 * @property fun a function to call when pat matches. When the function returnes true, choices and presets will be updated
+		 * @property fbk the name of a feedback to check when pat matches
+		 */
 		let subscriptions = [
 			{
 				pat: '^(pr|CHG).+\\.DestinationConnectionList=I\\d+',
@@ -735,19 +782,19 @@ class instance extends InstanceBase {
 					let [port, label] = res.replace(/^.+\/MEDIA\/VIDEO\//, '').split('.Text=')
 					if (port.match(/^I\d+$/)) {
 						this.inputs[port] = label
-						this.setVariableValues('name_' + port, label)
+						this.setVariableValues({ ['name_' + port]: label })
 						this.state.destinationConnectionList
 							.map((input, index) => {
 								return { in: input, out: 'O' + (index + 1) }
 							})
 							.filter((item) => item.in === port)
 							.forEach((item) => {
-								this.setVariableValues('sourcename_' + item.out, label)
+								this.setVariableValues({ ['sourcename_' + item.out]: label })
 							})
 					}
 					if (port.match(/^O\d+$/)) {
 						this.outputs[port] = label
-						this.setVariableValues('name_' + port, label)
+						this.setVariableValues({ ['name_' + port]: label })
 					}
 					return true
 				},
