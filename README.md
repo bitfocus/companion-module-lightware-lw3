@@ -3,6 +3,10 @@ See HELP.md and LICENSE
 
 # Version History
 
+## v2.0.3 (2023-06-08)
+* Bugfix: fixed readback of the internal matrix presets for MX2. This bug was preventing the module to load with MX2.
+* Bugfix: fixed feedback 'route' for MX2
+
 ## v2.0.2 (2023-05-26)
 * Bugfix: make actions working again
 * Bugfix: make feedbacks working again

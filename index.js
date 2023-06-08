@@ -67,6 +67,13 @@ class instance extends InstanceBase {
 	}
 
 	initActions() {
+		this.CHOICES_INPUTS = Object.keys(this.inputs).map((key) => {
+			return { id: key, label: this.inputs[key] }
+		})
+		this.CHOICES_OUTPUTS = Object.keys(this.outputs).map((key) => {
+			return { id: key, label: this.outputs[key] }
+		})
+
 		this.actions['xpt'] = {
 			name: 'XP:Switch - Select video input for output',
 			options: [
@@ -631,17 +638,60 @@ class instance extends InstanceBase {
 			this.initVariables()
 			this.setPresetDefinitions(this.presets)
 		})
-		this.sendCommand('GET /MEDIA/PRESET/*.Name', (result) => {
-			let list = result.split(/\r\n/)
-			this.CHOICES_PRESETS = list
-				.filter((item) => {
-					return item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/) !== undefined
-				})
-				.map((item) => {
-					let [_all, preset, name] = item.match(/\/MEDIA\/PRESET\/(.+?)\.Name=(.+)$/)
-					return { id: preset, label: name }
-				})
-			this.initActions()
+		this.CHOICES_PRESETS = []
+
+		this.sendCommand('GET /PRESETS/AVC/*.Name', (result) => {
+			if (typeof result !== 'string') {
+				this.log('error', `Got invalid response to 'GET /PRESETS/AVC/*.Name'. Response was:${result}`)
+				return
+			}
+			if (!result.startsWith('nE')) {
+				let list = result
+					.split(/\r\n/)
+					.filter((item) => {
+						return Array.isArray(item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/))
+					})
+					.map((item) => {
+						let [_all, preset, name] = item.match(/\/PRESETS\/AVC\/(.+?)\.Name=(.+)$/)
+						return { id: preset, label: name }
+					})
+				if (list.length) {
+					this.CHOICES_PRESETS.push(...list)
+					this.initActions()
+					return
+				} else {
+					this.log(
+						'debug',
+						`Response to 'GET /PRESETS/AVC/*.Name' didn't have any presets. Response was:${result}\nNow trying with /MEDIA/PRESET`
+					)
+				}
+			}
+
+			this.sendCommand('GET /MEDIA/PRESET', (result) => {
+				if (typeof result !== 'string' || result.startsWith('nE')) {
+					this.log('error', `Got invalid response to 'GET /MEDIA/PRESET'. Response was:${result}`)
+					return
+				}
+				let list = result
+					.split(/\r\n/)
+					.filter((item) => {
+						return Array.isArray(item.match(/\/MEDIA\/PRESET\/([A-Za-z0-9\-_]{1,16})/))
+					})
+					.map((item) => {
+						let [_all, preset] = item.match(/MEDIA\/PRESET\/([A-Za-z0-9\-_]{1,16})/)
+						return { id: preset, label: preset }
+					})
+				if (list.length) {
+					this.CHOICES_PRESETS.push(...list)
+					this.log(
+						'info',
+						`'GET /MEDIA/PRESET' found ${list.length} presets with the names: ${list.map((i) => i.label).join(', ')}`
+					)
+					this.initActions()
+				} else {
+					this.log('info', `Response to 'GET /MEDIA/PRESET' didn't have any presets. Response was:${result}`)
+				}
+			})
 		})
 		this.sendCommand('OPEN /MEDIA/XP/VIDEO', (result) => {})
 		this.sendCommand('GET /MEDIA/XP/VIDEO.DestinationConnectionList', (result) => {
@@ -763,15 +813,23 @@ class instance extends InstanceBase {
 		 */
 		let subscriptions = [
 			{
-				pat: '^(pr|CHG).+\\.DestinationConnectionList=I\\d+',
+				pat: '^(pr|CHG).+\\.DestinationConnection(List|Status)=',
 				fun: (res) => {
-					let inputs = res.replace(/^.+DestinationConnectionList=/, '').split(';')
+					let inputs = res.replace(/^.+DestinationConnection(List|Status)=/, '').split(';')
+					if (!Array.isArray(inputs)) {
+						this.log('error', `received very malformed connection status: ${res}`)
+						return
+					}
 					if (inputs[0].match(/^I\d+$/)) {
+						if (inputs[inputs.length - 1] === '') inputs.pop()
 						this.state.destinationConnectionList = inputs
 						this.setVariableValues(Object.fromEntries(inputs.map((value, index) => ['source_O' + (index + 1), value])))
 						this.setVariableValues(
 							Object.fromEntries(inputs.map((value, index) => ['sourcename_O' + (index + 1), this.inputs[value]]))
 						)
+					} else {
+						this.log('error', `received malformed connection status: ${res}`)
+						return
 					}
 				},
 				fbk: 'route',
@@ -797,6 +855,20 @@ class instance extends InstanceBase {
 						this.setVariableValues({ ['name_' + port]: label })
 					}
 					return true
+				},
+			},
+			{
+				pat: '^(pr|CHG).+\\/PRESETS\\/AVC\\/\\d+\\.Name=',
+				fun: (res) => {
+					let [preset, label] = res.replace(/^.+\/PRESETS\/AVC\//, '').split('.Name=')
+					if (preset > 0) {
+						const idx = this.CHOICES_PRESETS.find((choice) => choice.id == preset.toString())
+						if (idx) {
+							this.CHOICES_PRESETS[idx] = { id: preset, label }
+							return true
+						}
+					}
+					return false
 				},
 			},
 		]
