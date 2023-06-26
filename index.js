@@ -162,6 +162,15 @@ class instance extends InstanceBase {
 				}
 			},
 		}
+		this.actions['softreset'] = {
+			name: 'Soft Reset Device',
+			options: [],
+			callback: () => {
+				this.sendCommand('CALL /SYS:softReset()', (result) => {
+					this.log('info', 'Soft Reset command sent to device.')
+				})
+			}
+		}
 
 		this.setActionDefinitions(this.actions)
 	}

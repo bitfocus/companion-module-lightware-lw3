@@ -3,7 +3,7 @@
 	"name": "lightware-lw3",
 	"shortname": "lightwareLW3",
 	"description": "Control Lightware LW3 Equipment",
-	"version": "2.0.3",
+	"version": "2.0.4",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-lightware-lw3.git",
 	"bugs": "https://github.com/bitfocus/companion-module-lightware-lw3/issues",
@@ -19,6 +19,10 @@
 		{
 			"name": "Jeffrey Davidsz",
 			"email": "jeffrey.davidsz@vicreo.eu"
+		},
+		{
+			"name": "Joseph Adams",
+			"email": "josephdadams@gmail.com"
 		}
 	],
 	"legacyIds": ["lightware3"],
