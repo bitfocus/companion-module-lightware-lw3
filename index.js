@@ -829,7 +829,7 @@ class instance extends InstanceBase {
 						this.log('error', `received very malformed connection status: ${res}`)
 						return
 					}
-					if (inputs[0].match(/^I\d+$/)) {
+					if (inputs[0].match(/^(I\d+|0)$/)) { //if (inputs[0].match(/^I\d+$/)) {
 						if (inputs[inputs.length - 1] === '') inputs.pop()
 						this.state.destinationConnectionList = inputs
 						this.setVariableValues(Object.fromEntries(inputs.map((value, index) => ['source_O' + (index + 1), value])))
