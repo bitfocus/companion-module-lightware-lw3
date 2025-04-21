@@ -3,6 +3,9 @@ See HELP.md and LICENSE
 
 # Version History
 
+## v2.0.6 (2023-04-21)
+* Change type for the Info field in config settings
+
 ## v2.0.4 (2023-06-26)
 * Feat: added soft reset action
 
