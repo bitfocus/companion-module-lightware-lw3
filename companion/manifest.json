@@ -1,9 +1,11 @@
 {
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
 	"id": "lightware-lw3",
 	"name": "lightware-lw3",
 	"shortname": "lightwareLW3",
 	"description": "Control Lightware LW3 Equipment",
-	"version": "2.0.4",
+	"version": "0.0.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-lightware-lw3.git",
 	"bugs": "https://github.com/bitfocus/companion-module-lightware-lw3/issues",
@@ -27,10 +29,10 @@
 	],
 	"legacyIds": ["lightware3"],
 	"runtime": {
-		"type": "node18",
+		"type": "node22",
 		"api": "nodejs-ipc",
 		"apiVersion": "0.0.0",
-		"entrypoint": "../index.js"
+		"entrypoint": "../src/main.js"
 	},
 	"manufacturer": "Lightware",
 	"products": ["LW3"],
