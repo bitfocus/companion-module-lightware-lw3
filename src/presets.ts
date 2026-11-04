@@ -1,0 +1,334 @@
+import type {
+	CompanionButtonStepActions,
+	CompanionPresetDefinitions,
+	CompanionPresetSection,
+} from '@companion-module/base'
+import { BUTTON_PNG_BASE64 } from './button-image.js'
+import type { FeedbacksSchema } from './feedbacks.js'
+import type ModuleInstance from './main.js'
+import type { ModuleSchema } from './main.js'
+import { nameVar, sourceNameVar, stagedNameVar } from './variables.js'
+
+// Companion swaps this for the connection's label wherever it appears in preset text
+const VAR = '$(lightware-lw3:'
+/** Companion's own feedback, lit for as long as the button is held */
+const PUSHED = 'internal:buttonPushed'
+
+const CONTROL = 0xdadada
+const CONTROL_PUSHED = 0xffffff
+const DESTINATION = 0x808000
+const SOURCE = 0x008000
+const SELECTED_DST = 0xffff00
+const SELECTED_SRC = 0x00ff00
+const STAGED = 0xff8000
+const LOCKED = 0xff0000
+
+/** Text starts large and shrinks to fit its layer */
+const FONT_SIZE = 100
+/** For text that changes while the button is in use, so its size doesn't jump */
+const CHANGING_TEXT_FONT_SIZE = 32
+
+interface Bounds {
+	x: number
+	y: number
+	width: number
+	height: number
+}
+
+const FULL: Bounds = { x: 5, y: 5, width: 90, height: 90 }
+/** Layout, in percent of the button, of the stacked output button */
+const STACK = {
+	output: { x: 5, y: 5, width: 90, height: 30 },
+	cross: { x: 40, y: 25, width: 20, height: 20 },
+	current: { x: 5, y: 35, width: 90, height: 30 },
+	arrow: { x: 40, y: 55, width: 20, height: 20 },
+	staged: { x: 5, y: 65, width: 90, height: 30 },
+}
+
+const textLayer = (id: string, name: string, text: string, bounds: Bounds, enabled = true, fontsize = FONT_SIZE) =>
+	({
+		type: 'text',
+		id,
+		name,
+		enabled,
+		...bounds,
+		text,
+		color: 0x000000,
+		halign: 'center',
+		valign: 'center',
+		fontsize,
+		fontsizeAllowShrink: true,
+		font: 'companion-mono',
+		outlineColor: 0xff000000,
+	}) as const
+
+type PresetActions = CompanionButtonStepActions<ModuleSchema>['down']
+
+type PresetFeedback = (
+	| { [K in keyof FeedbacksSchema]: { feedbackId: K; options: FeedbacksSchema[K]['options'] } }[keyof FeedbacksSchema]
+	| { feedbackId: typeof PUSHED; options: Record<string, never> }
+) & {
+	background: number
+	/** Layers hidden until this feedback is true */
+	shows?: string[]
+}
+
+interface ButtonSpec {
+	name: string
+	background: number
+	actions: PresetActions
+	feedbacks: PresetFeedback[]
+}
+
+/** A button in the module style: the image on a coloured background, plus a plain version as a fallback */
+function moduleButton(
+	spec: ButtonSpec & { layers: ReturnType<typeof textLayer>[]; fallbackText: string },
+): CompanionPresetDefinitions<ModuleSchema>[string] {
+	const steps = [{ down: spec.actions, up: [] }]
+	return {
+		type: 'alternatives',
+		variants: [
+			{
+				type: 'layered',
+				name: spec.name,
+				elements: [
+					{ type: 'box', id: 'box0', name: 'Background', x: 0, y: 0, width: 100, height: 100, color: spec.background },
+					{
+						type: 'image',
+						id: 'image0',
+						name: 'Image',
+						x: 0,
+						y: 0,
+						width: 100,
+						height: 100,
+						base64Image: `data:image/png;base64,${BUTTON_PNG_BASE64}`,
+						fillMode: 'fill',
+					},
+					...spec.layers,
+				],
+				feedbacks: spec.feedbacks.map(({ background, shows, ...feedback }) => ({
+					...feedback,
+					styleOverrides: [
+						{ elementId: 'box0', elementProperty: 'color', override: background },
+						...(shows ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: true })),
+					],
+				})),
+				steps,
+			},
+			{
+				type: 'simple',
+				name: spec.name,
+				style: {
+					text: spec.fallbackText,
+					size: 'auto',
+					color: 0x000000,
+					bgcolor: spec.background,
+					png64: BUTTON_PNG_BASE64,
+				},
+				steps,
+				feedbacks: spec.feedbacks.map(({ background, shows: _shows, ...feedback }) => ({
+					...feedback,
+					style: { bgcolor: background, color: 0x000000 },
+				})),
+			},
+		],
+	}
+}
+
+/** One text layer filling the button */
+const textButton = (spec: ButtonSpec & { text: string; fontsize?: number }) =>
+	moduleButton({
+		...spec,
+		layers: [textLayer('text', 'text', spec.text, FULL, true, spec.fontsize)],
+		fallbackText: spec.text,
+	})
+
+/** Always last on a control button, so a press shows whatever colour the button has */
+const controlPushed: PresetFeedback = { feedbackId: PUSHED, options: {}, background: CONTROL_PUSHED }
+
+export function UpdatePresets(self: ModuleInstance): void {
+	const { state } = self
+	const presets: CompanionPresetDefinitions<ModuleSchema> = {}
+	const control = (id: string, name: string, text: string, actions: PresetActions, fontsize?: number): void => {
+		presets[id] = textButton({
+			name,
+			background: CONTROL,
+			text,
+			fontsize,
+			actions,
+			feedbacks: [controlPushed],
+		})
+	}
+
+	presets.blank = textButton({
+		name: 'Blank button in the module style: place it, use Convert to Normal Button, then add your own actions',
+		background: CONTROL,
+		text: '',
+		actions: [],
+		feedbacks: [controlPushed],
+	})
+	// input above output, the `v` overlapping the two names slightly
+	presets.take = moduleButton({
+		name: 'Take the selected input to the selected output',
+		background: CONTROL,
+		layers: [
+			textLayer('line0', 'label', 'TAKE', { x: 5, y: 5, width: 90, height: 25 }),
+			textLayer('line1', 'input', `${VAR}selected_input_label)`, { x: 5, y: 30, width: 90, height: 30 }),
+			textLayer('line2', 'arrow', 'v', { x: 40, y: 52, width: 20, height: 15 }),
+			textLayer('line3', 'output', `${VAR}selected_output_label)`, { x: 5, y: 60, width: 90, height: 30 }),
+		],
+		fallbackText: `TAKE\n${VAR}selected_input_label)\nv\n${VAR}selected_output_label)`,
+		actions: [{ actionId: 'takeSalvo', options: {} }],
+		feedbacks: [controlPushed],
+	})
+	presets.take_staged = textButton({
+		name: 'Take the staged routes together',
+		background: CONTROL,
+		text: 'TAKE\nSTAGED',
+		actions: [{ actionId: 'takeStaged', options: {} }],
+		feedbacks: [{ feedbackId: 'stagedWaiting', options: {}, background: STAGED }, controlPushed],
+	})
+	control('clear_staged', 'Clear the staged routes', 'CLEAR\nSTAGED', [{ actionId: 'clearStaged', options: {} }])
+	control(
+		'unroute',
+		'Clear the route on the selected output',
+		'CLEAR\nXPT',
+		[{ actionId: 'unroute', options: { output: 'O1', useSelected: true } }],
+		CHANGING_TEXT_FONT_SIZE,
+	)
+	control(
+		'lock',
+		'Lock or unlock the selected output',
+		`${VAR}selected_output_lock_text)`,
+		[{ actionId: 'outputLock', options: { output: 1, cmd: 'toggle', useSelected: true } }],
+		CHANGING_TEXT_FONT_SIZE,
+	)
+
+	presets.auto_route = textButton({
+		name: 'Step the auto-route mode: off, stage, cut',
+		background: CONTROL,
+		text: `AUTO\n${VAR}auto_route_mode)`,
+		fontsize: CHANGING_TEXT_FONT_SIZE,
+		actions: [{ actionId: 'setAutoRoute', options: { mode: 'next' } }],
+		feedbacks: [
+			{ feedbackId: 'autoRouteMode', options: { mode: 'stage' }, background: STAGED },
+			{ feedbackId: 'autoRouteMode', options: { mode: 'cut' }, background: LOCKED },
+			controlPushed,
+		],
+	})
+
+	const inputIds: string[] = []
+	for (let input = 1; input <= state.shownInputs; input++) {
+		const options = { port: `I${input}` }
+		const name = `${VAR}${nameVar(`I${input}`)})`
+		inputIds.push(`input_${input}`)
+		presets[`input_${input}`] = textButton({
+			name: `Input ${input}`,
+			background: SOURCE,
+			text: name,
+			actions: [{ actionId: 'selectSource', options }],
+			feedbacks: [
+				{ feedbackId: 'routedInput', options: { input: `I${input}` }, background: SELECTED_SRC },
+				{ feedbackId: 'sourceSelected', options: { port: input }, background: SELECTED_SRC },
+				{ feedbackId: PUSHED, options: {}, background: SELECTED_SRC },
+			],
+		})
+	}
+
+	const outputIds: string[] = []
+	const routedIds: string[] = []
+	for (let output = 1; output <= state.shownOutputs; output++) {
+		const port = `O${output}`
+		const options = { port }
+		const name = `${VAR}${nameVar(port)})`
+		const feedbacks: PresetFeedback[] = [
+			{ feedbackId: 'routedOutput', options: { output: port }, background: SELECTED_DST },
+			{ feedbackId: 'destinationSelected', options: { port: output }, background: SELECTED_DST },
+			{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
+			{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED },
+			{ feedbackId: 'outputLocked', options: { output: port }, background: LOCKED },
+		]
+		outputIds.push(`output_${output}`)
+		presets[`output_${output}`] = textButton({
+			name: `Output ${output}`,
+			background: DESTINATION,
+			text: name,
+			actions: [{ actionId: 'selectDestination', options }],
+			feedbacks,
+		})
+		const current = `${VAR}${sourceNameVar(output)})`
+		const staged = `[${VAR}${stagedNameVar(output)})]`
+		routedIds.push(`routed_${output}`)
+		presets[`routed_${output}`] = moduleButton({
+			name: `Output ${output} with its routed input`,
+			background: DESTINATION,
+			layers: [
+				textLayer('output', 'this output', name, STACK.output),
+				textLayer('cross', 'xpt', 'x', STACK.cross),
+				textLayer('current', 'current input', current, STACK.current),
+				textLayer('arrow', 'next xpt', 'v', STACK.arrow, false),
+				textLayer('staged', 'staged input', staged, STACK.staged, false),
+			],
+			fallbackText: `${name}\n${current}\n${staged}`,
+			actions: [{ actionId: 'selectDestination', options }],
+			feedbacks: [
+				{ feedbackId: 'destinationSelected', options: { port: output }, background: SELECTED_DST },
+				{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
+				{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED, shows: ['arrow', 'staged'] },
+				{ feedbackId: 'outputLocked', options: { output: port }, background: LOCKED },
+			],
+		})
+	}
+
+	const presetIds: string[] = []
+	for (const preset of state.presets.keys()) {
+		const id = `preset_${preset}`
+		presetIds.push(id)
+		presets[id] = textButton({
+			name: `Recall router preset ${preset}, or stage it if the auto-route mode is Stage`,
+			background: CONTROL,
+			text: preset,
+			actions: [{ actionId: 'preset', options: { preset } }],
+			feedbacks: [
+				{ feedbackId: 'presetLive', options: { preset }, background: SELECTED_SRC },
+				{ feedbackId: 'presetStaged', options: { preset }, background: STAGED },
+				controlPushed,
+			],
+		})
+	}
+
+	const structure: CompanionPresetSection<ModuleSchema>[] = [
+		{
+			id: 'control',
+			name: 'Control',
+			definitions: [
+				{
+					id: 'switching',
+					type: 'simple',
+					name: 'Switching',
+					presets: ['blank', 'take', 'take_staged', 'clear_staged', 'unroute', 'lock', 'auto_route'],
+				},
+			],
+		},
+		{
+			id: 'router_presets',
+			name: 'Router presets',
+			definitions: [{ id: 'router_presets', type: 'simple', name: 'Router presets', presets: presetIds }],
+		},
+		{
+			id: 'outputs',
+			name: 'Outputs',
+			definitions: [
+				{ id: 'outputs', type: 'simple', name: 'Outputs', presets: outputIds },
+				{ id: 'routed', type: 'simple', name: 'Outputs showing their routed input', presets: routedIds },
+			],
+		},
+		{
+			id: 'inputs',
+			name: 'Inputs',
+			definitions: [{ id: 'inputs', type: 'simple', name: 'Inputs', presets: inputIds }],
+		},
+	]
+
+	self.setPresetDefinitions(structure, presets)
+}
