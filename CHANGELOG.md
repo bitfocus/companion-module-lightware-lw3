@@ -53,11 +53,11 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - Soft reset.
 - How many routes one command can hold, which matters for a staged preset on a big router.
 - Whether the router announces a preset being saved, added or removed, and whether it announces a name or lock changed elsewhere.
-- Any router other than the MX2-8x8-HDMI20-L, and any other firmware.
+- Any router other than the MX2-8x8-HDMI20-L, any other firmware, and any other version of Companion.
 - Upgrading a v2 configuration.
 
 ### Tested on hardware
 
-In Companion: recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken.
+In Companion 5.1.1: recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken.
 
 With a command line test: several routes in one command, unrouting, a route to a locked output, renaming, and the router's announcement of a route changed elsewhere and of cables being unplugged.
