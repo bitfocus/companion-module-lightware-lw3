@@ -32,7 +32,7 @@ export function GetConfigFields(label: string): SomeCompanionConfigField[] {
 			id: 'host',
 			label: 'Router IP',
 			width: 6,
-			regex: Regex.IP,
+			regex: Regex.IPV4,
 		},
 		{
 			type: 'dropdown',

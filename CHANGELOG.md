@@ -39,7 +39,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(ports):** the page is titled with the router's name, and can change it. New `router_name` variable.
 - **feat(names):** new **Rename a port** action. Names changed elsewhere appear straight away and are logged.
 - **feat(presets):** presets use Companion 5 layered buttons with a plain fallback, a blank styled button, and every button lights up while held.
-- **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses.
+- **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses. Lines carry the connection's label as their source, and status messages name Lightware.
 - **feat(connection):** a lost connection is noticed within about 6 seconds without pressing anything, and the module keeps retrying until the router returns.
 - **feat(tools):** `tools/lw3-capture.mjs` reads a router's whole LW3 tree without changing anything, and `yarn fake-router` runs a fake one.
 

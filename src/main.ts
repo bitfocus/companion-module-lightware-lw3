@@ -2,8 +2,10 @@ import {
 	InstanceBase,
 	InstanceStatus,
 	TCPHelper,
+	createModuleLogger,
 	type CompanionHTTPRequest,
 	type CompanionHTTPResponse,
+	type LogLevel,
 	type SomeCompanionConfigField,
 } from '@companion-module/base'
 import { UpdateActions, type ActionsSchema, type LockCommand } from './actions.js'
@@ -119,6 +121,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.setVariableValues({ ...portNameValues(this.state), ...selectionValues(this.state) })
 		this.#publishAutoRouteMode()
 		this.#connect()
+	}
+
+	/** Companion's debug log never names the connection, so lines carry its label as their source. */
+	override log(level: LogLevel, message: string): void {
+		createModuleLogger(this.label)[level](message)
 	}
 
 	async destroy(): Promise<void> {
@@ -619,7 +626,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 		const { host } = this.config
 		if (!host) {
-			this.updateStatus(InstanceStatus.BadConfig, 'No router IP set')
+			this.updateStatus(InstanceStatus.BadConfig, 'No Lightware router IP set')
 			return
 		}
 		if (!retrying) this.updateStatus(InstanceStatus.Connecting)
@@ -675,14 +682,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#replyTimedOut(command: string): void {
 		this.#lostAt ??= Date.now()
 		this.log('warn', `No reply from the router to ${command}, reconnecting`)
-		this.updateStatus(InstanceStatus.ConnectionFailure, 'No reply from the router')
+		this.updateStatus(InstanceStatus.ConnectionFailure, 'No reply from the Lightware router')
 		this.#connect(true)
 	}
 
 	#armConnectTimer(): void {
 		this.#connectTimer ??= setTimeout(() => {
 			this.#connectTimer = undefined
-			this.updateStatus(InstanceStatus.ConnectionFailure, 'Cannot reach the router, retrying')
+			this.updateStatus(InstanceStatus.ConnectionFailure, 'Cannot reach the Lightware router, retrying')
 			this.#connect(true)
 		}, CONNECT_TIMEOUT_MS)
 	}
@@ -733,7 +740,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const unit = `${model || 'Unknown model'}, firmware ${version || 'unknown'}`
 		if (!supported) {
 			this.log('warn', `Connected to ${unit}, but it doesn't have the routing this module knows. Please report it.`)
-			this.updateStatus(InstanceStatus.UnknownWarning, 'Router model not supported yet')
+			this.updateStatus(InstanceStatus.UnknownWarning, 'Lightware router model not supported yet')
 		} else {
 			this.log(
 				'info',

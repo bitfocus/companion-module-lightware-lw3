@@ -40,6 +40,16 @@ function variable(module: Module, id: string): unknown {
 	return undefined
 }
 
+describe('log lines', () => {
+	it('carry the connection label as their source', () => {
+		const sink = vi.fn()
+		vi.stubGlobal('COMPANION_LOGGER', sink)
+		ModuleInstance.prototype.log.call({ label: 'lightwareLW3' }, 'warn', 'hello')
+		vi.unstubAllGlobals()
+		expect(sink).toHaveBeenCalledWith('lightwareLW3', 'warn', 'hello')
+	})
+})
+
 const logged = (module: Module, level: string): string[] =>
 	(mock(module.log).mock.calls as [string, string][]).filter(([l]) => l === level).map(([, text]) => text)
 
@@ -675,7 +685,10 @@ describe('the module against the fake router', () => {
 		await connected()
 		fake.silent = true
 		await until(() => logged(module, 'warn').some((line) => line.startsWith('No reply from the router')), 8000)
-		expect(mock(module.updateStatus)).toHaveBeenCalledWith(InstanceStatus.ConnectionFailure, 'No reply from the router')
+		expect(mock(module.updateStatus)).toHaveBeenCalledWith(
+			InstanceStatus.ConnectionFailure,
+			'No reply from the Lightware router',
+		)
 		fake.silent = false
 		await until(() => logged(module, 'info').some((line) => line.startsWith('Reconnected')), 8000)
 	}, 20_000)
@@ -698,7 +711,7 @@ describe('the module against the fake router', () => {
 		await until(() => logged(module, 'warn').some((line) => line.includes("doesn't have the routing")))
 		expect(mock(module.updateStatus)).toHaveBeenCalledWith(
 			InstanceStatus.UnknownWarning,
-			'Router model not supported yet',
+			'Lightware router model not supported yet',
 		)
 	})
 
