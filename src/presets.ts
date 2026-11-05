@@ -68,9 +68,14 @@ type PresetFeedback = (
 	| { [K in keyof FeedbacksSchema]: { feedbackId: K; options: FeedbacksSchema[K]['options'] } }[keyof FeedbacksSchema]
 	| { feedbackId: typeof PUSHED; options: Record<string, never> }
 ) & {
-	background: number
+	/** Left out to leave the colour to other feedbacks */
+	background?: number
 	/** Layers hidden until this feedback is true */
 	shows?: string[]
+	/** Layers hidden while this feedback is true */
+	hides?: string[]
+	/** What the plain fallback says while this feedback is true */
+	fallbackText?: string
 }
 
 interface ButtonSpec {
@@ -106,11 +111,14 @@ function moduleButton(
 					},
 					...spec.layers,
 				],
-				feedbacks: spec.feedbacks.map(({ background, shows, ...feedback }) => ({
+				feedbacks: spec.feedbacks.map(({ background, shows, hides, fallbackText: _text, ...feedback }) => ({
 					...feedback,
 					styleOverrides: [
-						{ elementId: 'box0', elementProperty: 'color', override: background },
+						...(background === undefined
+							? []
+							: [{ elementId: 'box0', elementProperty: 'color', override: background }]),
 						...(shows ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: true })),
+						...(hides ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: false })),
 					],
 				})),
 				steps,
@@ -126,9 +134,12 @@ function moduleButton(
 					png64: BUTTON_PNG_BASE64,
 				},
 				steps,
-				feedbacks: spec.feedbacks.map(({ background, shows: _shows, ...feedback }) => ({
+				feedbacks: spec.feedbacks.map(({ background, shows: _shows, hides: _hides, fallbackText, ...feedback }) => ({
 					...feedback,
-					style: { bgcolor: background, color: 0x000000 },
+					style: {
+						...(background === undefined ? {} : { bgcolor: background, color: 0x000000 }),
+						...(fallbackText === undefined ? {} : { text: fallbackText }),
+					},
 				})),
 			},
 		],
@@ -167,26 +178,25 @@ export function UpdatePresets(self: ModuleInstance): void {
 		actions: [],
 		feedbacks: [controlPushed],
 	})
-	// input above output, the `v` overlapping the two names slightly
+	// input above output, the `v` overlapping the two names slightly, until routes are waiting
+	const takePreview = ['line0', 'line1', 'line2', 'line3']
 	presets.take = moduleButton({
-		name: 'Take the selected input to the selected output',
+		name: 'Take the staged routes and the selected input and output together',
 		background: CONTROL,
 		layers: [
 			textLayer('line0', 'label', 'TAKE', { x: 5, y: 5, width: 90, height: 25 }),
 			textLayer('line1', 'input', `${VAR}selected_input_label)`, { x: 5, y: 30, width: 90, height: 30 }),
 			textLayer('line2', 'arrow', 'v', { x: 40, y: 52, width: 20, height: 15 }),
 			textLayer('line3', 'output', `${VAR}selected_output_label)`, { x: 5, y: 60, width: 90, height: 30 }),
+			textLayer('staged', 'staged', 'TAKE\nSTAGED', FULL, false, CHANGING_TEXT_FONT_SIZE),
 		],
 		fallbackText: `TAKE\n${VAR}selected_input_label)\nv\n${VAR}selected_output_label)`,
-		actions: [{ actionId: 'takeSalvo', options: {} }],
-		feedbacks: [controlPushed],
-	})
-	presets.take_staged = textButton({
-		name: 'Take the staged routes together',
-		background: CONTROL,
-		text: 'TAKE\nSTAGED',
-		actions: [{ actionId: 'takeStaged', options: {} }],
-		feedbacks: [{ feedbackId: 'stagedWaiting', options: {}, background: STAGED }, controlPushed],
+		actions: [{ actionId: 'take', options: {} }],
+		feedbacks: [
+			{ feedbackId: 'stagedRoutes', options: {}, shows: ['staged'], hides: takePreview, fallbackText: 'TAKE\nSTAGED' },
+			{ feedbackId: 'stagedWaiting', options: {}, background: STAGED },
+			controlPushed,
+		],
 	})
 	control('clear_staged', 'Clear the staged routes', 'CLEAR\nSTAGED', [{ actionId: 'clearStaged', options: {} }])
 	control(
@@ -258,6 +268,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		})
 		const current = `${VAR}${sourceNameVar(output)})`
 		const staged = `[${VAR}${stagedNameVar(output)})]`
+		const next = `[${VAR}selected_input_label)]`
 		routedIds.push(`routed_${output}`)
 		presets[`routed_${output}`] = moduleButton({
 			name: `Output ${output} with its routed input`,
@@ -268,6 +279,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 				textLayer('current', 'current input', current, STACK.current),
 				textLayer('arrow', 'next xpt', 'v', STACK.arrow, false),
 				textLayer('staged', 'staged input', staged, STACK.staged, false),
+				textLayer('next', 'selected input', next, STACK.staged, false),
 			],
 			fallbackText: `${name}\n${current}\n${staged}`,
 			actions: [{ actionId: 'selectDestination', options }],
@@ -275,6 +287,13 @@ export function UpdatePresets(self: ModuleInstance): void {
 				{ feedbackId: 'destinationSelected', options: { port: output }, background: SELECTED_DST },
 				{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
 				{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED, shows: ['arrow', 'staged'] },
+				{
+					feedbackId: 'outputNext',
+					options: { output: port },
+					shows: ['arrow', 'next'],
+					hides: ['staged'],
+					fallbackText: `${name}\n${current}\n${next}`,
+				},
 				{ feedbackId: 'outputLocked', options: { output: port }, background: LOCKED },
 			],
 		})
@@ -306,7 +325,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					id: 'switching',
 					type: 'simple',
 					name: 'Switching',
-					presets: ['blank', 'take', 'take_staged', 'clear_staged', 'unroute', 'lock', 'auto_route'],
+					presets: ['blank', 'take', 'clear_staged', 'unroute', 'lock', 'auto_route'],
 				},
 			],
 		},

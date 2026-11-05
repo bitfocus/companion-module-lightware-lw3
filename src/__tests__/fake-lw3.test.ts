@@ -74,6 +74,69 @@ describe('the fake matches the measured router', () => {
 		expect(reply).toEqual([`pw /MEDIA/NAMES/VIDEO.O7=2;${'X'.repeat(62)}`])
 	})
 
+	it('reports some characters in names with a backslash', () => {
+		const fake = measuredRouter()
+		expect(fake.respond('SET /MEDIA/NAMES/VIDEO.O7=2;Paren(s) & amp').reply).toEqual([
+			'pw /MEDIA/NAMES/VIDEO.O7=2;Paren\\(s\\) & amp',
+		])
+		expect(fake.respond('SET /MEDIA/NAMES/VIDEO.O7=2;#hash %pc').reply).toEqual([
+			'pw /MEDIA/NAMES/VIDEO.O7=2;\\#hash \\%pc',
+		])
+	})
+
+	it('accepts only some numbers before a name, and needs a name', () => {
+		const fake = measuredRouter()
+		for (const value of ['0;Zero', 'x;Letter']) {
+			expect(fake.respond(`SET /MEDIA/NAMES/VIDEO.O7=${value}`).reply).toEqual([`pw /MEDIA/NAMES/VIDEO.O7=${value}`])
+		}
+		for (const value of ['9;Nine', '12;Twelve', ';None', '2;']) {
+			expect(fake.respond(`SET /MEDIA/NAMES/VIDEO.O7=${value}`).reply).toEqual([
+				'pE /MEDIA/NAMES/VIDEO.O7 %E004: Invalid value',
+			])
+		}
+	})
+
+	it('switches an EDID with a colon, one or several, and refuses the rest', () => {
+		const fake = measuredRouter()
+		expect(fake.respond('CALL /EDID:switch(F137,E8)').reply).toEqual(['mE /EDID:switch %E004: Invalid value'])
+		expect(fake.respond('CALL /EDID:switch(E8:F1)').reply).toEqual(['mE /EDID:switch %E004: Invalid value'])
+		expect(fake.respond('CALL /EDID:switch(F1:E7;F1:E8)').reply).toEqual(['mO /EDID:switch='])
+		expect(fake.respond('GET /EDID.EdidStatus').reply).toEqual([
+			'pr /EDID.EdidStatus=F137;F137;F137;F137;F137;F137;F1;F1',
+		])
+		expect(fake.respond('CALL /EDID:switch(F999:E8)').reply).toEqual(['mE /EDID:switch %E004: Invalid value'])
+	})
+
+	it('will emulate an empty slot', () => {
+		expect(measuredRouter().respond('CALL /EDID:switch(U50:E8)').reply).toEqual(['mO /EDID:switch='])
+	})
+
+	it('only stores and deletes in U slots', () => {
+		const fake = measuredRouter()
+		expect(fake.respond('CALL /EDID:copy(D1,U100)').reply).toEqual(['mE /EDID:copy %E004: Invalid value'])
+		expect(fake.respond('CALL /EDID:copy(F1:F2)').reply).toEqual(['mE /EDID:copy %E004: Invalid value'])
+		expect(fake.respond('CALL /EDID:delete(F1)').reply).toEqual(['mE /EDID:delete %E004: Invalid value'])
+		expect(fake.respond('CALL /EDID:copy(D1:U100)').reply).toEqual(['mO /EDID:copy='])
+		expect(fake.edidSlots.get('U100')?.valid).toBe(true)
+		expect(fake.respond('CALL /EDID:delete(U100)').reply).toEqual(['mO /EDID:delete='])
+		expect(fake.edidSlots.get('U100')?.valid).toBe(false)
+	})
+
+	it('has wildcards for EDID banks but not for port settings', () => {
+		const fake = measuredRouter()
+		expect(fake.respond('GET /EDID/F/*.MonitorName').reply[0]).toBe('pr /EDID/F/F1.MonitorName=D640x480p60')
+		expect(fake.respond('GET /MEDIA/PORTS/VIDEO/*/SETTINGS.HdcpVersion').reply).toEqual([
+			'pE /MEDIA/PORTS/VIDEO/*/SETTINGS.HdcpVersion %E002: Not exists',
+		])
+	})
+
+	it('takes HDCP settings the router has, and refuses the rest', () => {
+		const fake = measuredRouter()
+		const path = '/MEDIA/PORTS/VIDEO/I8/SETTINGS.HdcpVersion'
+		expect(fake.respond(`SET ${path}=3`).reply).toEqual([`pw ${path}=3`])
+		expect(fake.respond(`SET ${path}=1`).reply).toEqual([`pE ${path} %E004: Invalid value`])
+	})
+
 	it('reports port status the way the router does', () => {
 		const fake = measuredRouter()
 		fake.setSignal('O1', true, true)

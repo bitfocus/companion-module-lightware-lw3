@@ -25,7 +25,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(routing):** a selected input flashes while taking it would change the selected output. An accepted take clears the selection, and a refused one keeps it.
 - **feat(routing):** new auto-route mode in the connection settings, and an **AUTO** button that steps off, stage, cut. It takes or stages as soon as an input and an output are both selected.
 - **feat(routing):** pressing an output lights the input on it, and pressing an input lights every output carrying it.
-- **feat(routing):** new **Stage** actions and buttons build a set of routes, and **Take the staged routes** sends them as one command so the router changes them together.
+- **feat(routing):** new **Stage** actions and buttons build a set of routes. The one **TAKE** button sends what is staged and any selected pair as one command, so the router changes them together. Leaving Stage discards anything staged, and the log lists it.
 - **feat(routing):** new **Unroute an output** action.
 - **feat(routing):** route changes made elsewhere, such as from the front panel or web interface, appear straight away and are logged. The module relies on the router's change messages and doesn't poll.
 - **feat(presets):** new **Router preset is live** feedback and `live_preset` variable show when the router's routes match a preset. Presets stored on the router get a button each.
@@ -34,6 +34,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(presets):** a router preset's name can be typed into its action while the router is offline.
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
 - **feat(status):** new **Signal on a port** and **Cable connected to a port** feedbacks.
+- **feat(ports):** a page at `/instance/<connection label>/` to edit names, EDID and HDCP for all ports together, with a confirmation listing the changes, all-or-nothing checks, paste from a spreadsheet, Revert and Copy all. It also stores and deletes EDIDs in U slots. EDID changes go out as one command.
+- **feat(ports):** the page updates live from the router's WebSocket, keeps anything being edited, and shows whether it is Live. Names with accents or emoji are sent as the nearest plain characters, and EDID lists can be filtered.
 - **feat(names):** new **Rename a port** action. Names changed elsewhere appear straight away and are logged.
 - **feat(presets):** presets use Companion 5 layered buttons with a plain fallback, a blank styled button, and every button lights up while held.
 - **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses.
@@ -52,12 +54,14 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 
 - Soft reset.
 - How many routes one command can hold, which matters for a staged preset on a big router.
-- Whether the router announces a preset being saved, added or removed, and whether it announces a name or lock changed elsewhere.
+- Whether the router announces a preset being saved, added or removed, and whether it announces a lock changed elsewhere.
 - Any router other than the MX2-8x8-HDMI20-L, any other firmware, and any other version of Companion.
 - Upgrading a v2 configuration.
+- How many WebSockets and subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
+- The ports page's WebSocket against the fake router, which has none by design.
 
 ### Tested on hardware
 
-In Companion 5.1.1: recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken.
+In Companion 5.1.1: recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken. The ports page was tried on spare ports: names including `( ) # %`, HDCP, setting an EDID, storing and deleting one, Revert, and paste.
 
 With a command line test: several routes in one command, unrouting, a route to a locked output, renaming, and the router's announcement of a route changed elsewhere and of cables being unplugged.

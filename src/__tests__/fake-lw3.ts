@@ -13,6 +13,12 @@ interface Port {
 	muted: boolean
 }
 
+interface Slot {
+	name: string
+	resolution: string
+	valid: boolean
+}
+
 export interface FakeLw3Options {
 	inputs?: number
 	outputs?: number
@@ -38,6 +44,10 @@ export class FakeLw3 {
 	readonly inputs: Port[]
 	readonly outputs: Port[]
 	readonly presets = new Map<string, string[]>()
+	readonly edidSlots = new Map<string, Slot>()
+	readonly emulated: string[]
+	readonly inputHdcp: string[]
+	readonly outputHdcp: string[]
 	/** Everything received, without the ids */
 	readonly received: string[] = []
 	/** Stop answering, while staying connected */
@@ -52,6 +62,16 @@ export class FakeLw3 {
 		this.inputs = Array.from({ length: inputs }, (_, i) => newPort(`Input ${i + 1}`))
 		this.outputs = Array.from({ length: outputs }, (_, i) => newPort(`Output ${i + 1}`))
 		this.routes = Array.from({ length: outputs }, () => 0)
+		this.emulated = Array.from({ length: inputs }, () => 'F137')
+		this.inputHdcp = Array.from({ length: inputs }, () => '2')
+		this.outputHdcp = Array.from({ length: outputs }, () => 'AUTO')
+		this.edidSlots.set('F1', { name: 'D640x480p60', resolution: '640x480p60.00Hz', valid: true })
+		this.edidSlots.set('F137', { name: 'HUHDp60_444', resolution: '3840x2160p60.00Hz', valid: true })
+		for (let i = 1; i <= outputs; i++) {
+			this.edidSlots.set(`D${i}`, { name: `Display ${i}`, resolution: '1920x1080p50.00Hz', valid: true })
+		}
+		for (let i = 1; i <= 100; i++) this.edidSlots.set(`U${i}`, { name: '', resolution: '', valid: false })
+		this.edidSlots.set('U1', { name: 'Extron D     ', resolution: '1920x1080p50.00Hz', valid: true })
 		this.#noRouting = options.noRouting === true
 		this.presets.set(
 			'SHOW-A',
@@ -173,6 +193,9 @@ export class FakeLw3 {
 		const set = /^SET \/MEDIA\/NAMES\/VIDEO\.([IO]\d+)=(.*)$/.exec(command)
 		if (set) return this.#setName(set[1], set[2], changes)
 
+		const hdcp = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(HdcpVersion|HdcpMode)=(.*)$/.exec(command)
+		if (hdcp) return this.#setHdcp(hdcp[1], hdcp[2], Number(hdcp[3]), hdcp[4], hdcp[5], changes)
+
 		const get = /^GET (.*)$/.exec(command)
 		if (!get) return notExists(command)
 		const target = get[1]
@@ -184,10 +207,19 @@ export class FakeLw3 {
 		}
 		if (target === `${XP}.DestinationPortStatus`) return [`pr ${XP}.DestinationPortStatus=${statusList(this.outputs)}`]
 		if (target === `${XP}.SourcePortStatus`) return [`pr ${XP}.SourcePortStatus=${statusList(this.inputs)}`]
+		if (target === '/EDID.EdidStatus') return [`pr /EDID.EdidStatus=${this.emulated.join(';')}`]
+		const wildcard = /^\/EDID\/([FDU])\/\*\.(Validity|MonitorName|PreferredResolution)$/.exec(target)
+		if (wildcard) return this.#edidBank(wildcard[1], wildcard[2])
+		const setting = /^\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS\.(HdcpVersion|HdcpMode)$/.exec(target)
+		if (setting) {
+			const value = (setting[1] === 'I' ? this.inputHdcp : this.outputHdcp)[Number(setting[2]) - 1]
+			return [`pw ${target}=${value}`]
+		}
+		if (target.startsWith('/MEDIA/PORTS/VIDEO/') && target.includes('*')) return notExists(target)
 		if (target === `${NAMES}.*`) {
 			return [
-				...this.inputs.map((port, i) => `pw ${NAMES}.I${i + 1}=${port.prefix};${port.name}`),
-				...this.outputs.map((port, i) => `pw ${NAMES}.O${i + 1}=${port.prefix};${port.name}`),
+				...this.inputs.map((port, i) => `pw ${NAMES}.I${i + 1}=${port.prefix};${escaped(port.name)}`),
+				...this.outputs.map((port, i) => `pw ${NAMES}.O${i + 1}=${port.prefix};${escaped(port.name)}`),
 			]
 		}
 		if (target === PRESET) return [...this.presets.keys()].map((name) => `n- ${PRESET}/${name}`)
@@ -201,6 +233,8 @@ export class FakeLw3 {
 		const fail = (code: string, text: string): string[] => [`mE ${path}:${method} %${code}: ${text}`]
 		const ok = [`mO ${path}:${method}=OK`]
 		if (method === 'softReset') return ok
+
+		if (path === '/EDID') return this.#callEdid(method, args, ok, fail, changes)
 
 		const preset = /^\/MEDIA\/PRESET\/(.+)$/.exec(path)
 		if (preset && method === 'load') {
@@ -257,16 +291,79 @@ export class FakeLw3 {
 	}
 
 	#setName(portId: string, value: string, changes: [string, string][]): string[] {
-		const match = /^(\d+);(.*)$/.exec(value)
+		// measured: 0, 1, 2, 3 and x are accepted, 9 and 12 are not, and a name can't be empty
+		const match = /^([0-3]|x);(.+)$/.exec(value)
 		if (!match) return [`pE ${NAMES}.${portId} %E004: Invalid value`]
 		const port = this.#target(portId)
 		port.prefix = match[1]
 		port.name = match[2].slice(0, 62)
-		const stored = `${portId}=${port.prefix};${port.name}`
+		const stored = `${portId}=${port.prefix};${escaped(port.name)}`
 		changes.push([NAMES, stored])
 		return [`pw ${NAMES}.${stored}`]
 	}
+
+	#setHdcp(
+		path: string,
+		kind: string,
+		port: number,
+		property: string,
+		value: string,
+		changes: [string, string][],
+	): string[] {
+		const allowed = kind === 'I' ? ['0', '2', '3'] : ['AUTO', 'ALWAYS']
+		if (!allowed.includes(value)) return [`pE ${path}.${property} %E004: Invalid value`]
+		const list = kind === 'I' ? this.inputHdcp : this.outputHdcp
+		if (list[port - 1] !== value) changes.push([path, `${property}=${value}`])
+		list[port - 1] = value
+		return [`pw ${path}.${property}=${value}`]
+	}
+
+	/** Measured: all the slots in a bank come back in text order, F1, F10, F100, with empty ones as blank values */
+	#edidBank(bank: string, property: string): string[] {
+		const ids = [...this.edidSlots.keys()].filter((id) => id.startsWith(bank)).sort()
+		return ids.map((id) => {
+			const slot = this.edidSlots.get(id) as Slot
+			const value = property === 'Validity' ? slot.valid : property === 'MonitorName' ? slot.name : slot.resolution
+			return `pr /EDID/${bank}/${id}.${property}=${String(value)}`
+		})
+	}
+
+	#callEdid(
+		method: string,
+		args: string,
+		ok: string[],
+		fail: (code: string, text: string) => string[],
+		changes: [string, string][],
+	): string[] {
+		const empty = [`mO /EDID:${method}=`]
+		if (method === 'switch') {
+			const pairs = args.split(';').map((part) => /^([FDU]\d+):E(\d+)$/.exec(part))
+			// measured: it announces the status even when it refuses
+			changes.push(['/EDID', `EdidStatus=${this.emulated.join(';')}`])
+			if (pairs.some((pair) => !pair || !this.edidSlots.has(pair[1]))) return fail('E004', 'Invalid value')
+			for (const pair of pairs) if (pair) this.emulated[Number(pair[2]) - 1] = pair[1]
+			changes.pop()
+			changes.push(['/EDID', `EdidStatus=${this.emulated.join(';')}`])
+			return empty
+		}
+		if (method === 'copy') {
+			const pair = /^([FDU]\d+):(U\d+)$/.exec(args)
+			const from = pair && this.edidSlots.get(pair[1])
+			if (!pair || !from) return fail('E004', 'Invalid value')
+			this.edidSlots.set(pair[2], { ...from })
+			return empty
+		}
+		if (method === 'delete') {
+			if (!/^U\d+$/.test(args) || !this.edidSlots.has(args)) return fail('E004', 'Invalid value')
+			this.edidSlots.set(args, { name: '', resolution: '', valid: false })
+			return empty
+		}
+		return ok
+	}
 }
+
+/** Measured: these characters come back with a backslash in front */
+const escaped = (name: string): string => name.replace(/[()#%\\]/g, '\\$&')
 
 function statusList(ports: Port[]): string {
 	return `${ports

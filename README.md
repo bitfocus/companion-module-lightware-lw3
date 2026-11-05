@@ -17,7 +17,7 @@ yarn build
 yarn test
 ```
 
-To try the module without a router, run `yarn fake-router` and point a connection at `127.0.0.1`.
+To try the module without a router, run `yarn fake-router` and point a connection at `127.0.0.1`. The fake has no WebSocket, by design: it would only serve changes made from elsewhere, which a fake rarely has, so the ports page shows Not live against it.
 
 ## Reading a router
 

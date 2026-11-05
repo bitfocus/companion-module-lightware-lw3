@@ -2,8 +2,10 @@
  * Drives the module against the fake router over a real TCP connection on localhost. Companion's
  * `InstanceBase` is stubbed, and the socket is the real `TCPHelper`.
  */
+import { Script } from 'node:vm'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { InstanceStatus } from '@companion-module/base'
+import { plainName } from '../protocol.js'
 import { FakeLw3, until } from './fake-lw3.js'
 
 vi.mock('@companion-module/base', async (importOriginal) => {
@@ -280,6 +282,156 @@ describe('the module against the fake router', () => {
 		expect(variable(module, 'auto_route_mode')).toBe('CUT')
 	})
 
+	describe('the one TAKE', () => {
+		const ready = async (autoRoute: 'off' | 'stage' = 'off'): Promise<void> => {
+			await module.init({ host: '127.0.0.1', port, autoRoute })
+			await connected()
+		}
+
+		it('takes a selected pair when nothing is staged', async () => {
+			await ready()
+			module.selectOutput(7)
+			module.selectInput(3)
+			await module.take()
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I3:O7)'])
+			expect(module.state.selectedInput).toBeUndefined()
+		})
+
+		it('takes what is staged', async () => {
+			await ready('stage')
+			module.selectInput(3)
+			module.selectOutput(7)
+			module.selectOutput(8)
+			await module.take()
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I3:O7;I3:O8)'])
+			expect(module.state.staged.size).toBe(0)
+			expect(module.state.selectedInput).toBeUndefined()
+		})
+
+		it('sends staged routes and a selected pair in one command', async () => {
+			await ready()
+			module.stage(3, 7)
+			module.selectOutput(8)
+			module.selectInput(4)
+			await module.take()
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I3:O7;I4:O8)'])
+			expect(module.state.staged.size).toBe(0)
+			expect(module.state.selectedInput).toBeUndefined()
+		})
+
+		it('lets the selected pair win over a route staged for the same output', async () => {
+			await ready()
+			module.stage(3, 7)
+			module.selectOutput(7)
+			module.selectInput(4)
+			await module.take()
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I4:O7)'])
+			expect(module.state.staged.size).toBe(0)
+		})
+
+		it('keeps a selected pair whose output is locked, and sends the rest', async () => {
+			await ready()
+			await module.lockOutput(8, 'lockDestination')
+			await until(() => module.state.isLocked(8))
+			module.stage(3, 7)
+			module.selectOutput(8)
+			module.selectInput(4)
+			await module.take()
+			expect(writes().filter((line) => line.includes('switch'))).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I3:O7)'])
+			expect(module.state.selectedInput).toBe(4)
+			expect(logged(module, 'warn').join()).toContain('stays selected')
+		})
+
+		it('sends nothing after the staged routes are cleared, even with the pair on show', async () => {
+			await ready('stage')
+			module.selectInput(3)
+			module.selectOutput(7)
+			module.clearStaged()
+			expect(module.state.selectedInput).toBeUndefined()
+			expect(module.state.selectedOutput).toBeUndefined()
+			expect(variable(module, 'selected_input_label')).toBe('IN')
+			await module.take()
+			expect(writes()).toEqual([])
+		})
+
+		it('keeps a pair that was never staged when clearing in Off', async () => {
+			await ready()
+			module.stage(3, 7)
+			module.selectOutput(8)
+			module.selectInput(4)
+			module.clearStaged()
+			expect(module.state.staged.size).toBe(0)
+			expect(module.state.selectedInput).toBe(4)
+			await module.take()
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I4:O8)'])
+		})
+
+		it('clears a half selection when clearing in Stage', async () => {
+			await ready('stage')
+			module.selectInput(3)
+			module.clearStaged()
+			expect(module.state.selectedInput).toBeUndefined()
+		})
+
+		it('shows the next input only on the selected output, while it would change the route', async () => {
+			await ready()
+			const next = (output: string): boolean => {
+				const { outputNext } = lastCall(module.setFeedbackDefinitions)
+				return outputNext.callback({ options: { output } })
+			}
+			module.selectOutput(7)
+			expect(next('O7')).toBe(false)
+			module.selectInput(3)
+			expect(next('O7')).toBe(true)
+			expect(next('O8')).toBe(false)
+			await module.take()
+			expect(next('O7')).toBe(false)
+			await until(() => variable(module, 'source_O7') === 'I3')
+			module.selectOutput(7)
+			module.selectInput(3)
+			expect(next('O7')).toBe(false)
+		})
+
+		it('asks for a selection when there is nothing to take', async () => {
+			await ready()
+			await module.take()
+			expect(writes()).toEqual([])
+			expect(logged(module, 'warn').join()).toContain('Select an input and an output')
+		})
+	})
+
+	describe('leaving Stage', () => {
+		it.each(['off', 'cut'] as const)('discards what is staged on moving to %s, and logs it', async (mode) => {
+			await module.init({ host: '127.0.0.1', port, autoRoute: 'stage' })
+			await connected()
+			module.selectInput(3)
+			module.selectOutput(7)
+			module.setAutoRouteMode(mode)
+			expect(module.state.staged.size).toBe(0)
+			expect(module.state.selectedInput).toBeUndefined()
+			expect(writes()).toEqual([])
+			expect(logged(module, 'info').join()).toContain('Input 3 to Output 7')
+			await module.take()
+			expect(writes()).toEqual([])
+		})
+
+		it('does the same when the connection settings change it', async () => {
+			await module.init({ host: '127.0.0.1', port, autoRoute: 'stage' })
+			await connected()
+			module.stage(3, 7)
+			await module.configUpdated({ host: '127.0.0.1', port, autoRoute: 'off' })
+			expect(module.state.staged.size).toBe(0)
+		})
+
+		it('keeps routes staged by an action while moving between the other modes', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			module.stage(3, 7)
+			module.setAutoRouteMode('cut')
+			expect(module.state.staged.size).toBe(1)
+		})
+	})
+
 	it('takes staged routes as one command', async () => {
 		await module.init({ host: '127.0.0.1', port })
 		await connected()
@@ -541,7 +693,7 @@ describe('the module against the fake router', () => {
 		const presets = lastPresets(module)
 		const feedbackIds = Object.keys(lastCall(module.setFeedbackDefinitions))
 		const actionIds = Object.keys(lastCall(module.setActionDefinitions))
-		expect(Object.keys(presets)).toHaveLength(7 + 2 + 8 * 2 + 8)
+		expect(Object.keys(presets)).toHaveLength(6 + 2 + 8 * 2 + 8)
 		for (const [id, preset] of Object.entries(presets)) {
 			for (const variant of preset.variants) {
 				const used: string[] = variant.feedbacks.map((feedback: { feedbackId: string }) => feedback.feedbackId)
@@ -552,6 +704,172 @@ describe('the module against the fake router', () => {
 				for (const action of variant.steps[0].down) expect(actionIds).toContain(action.actionId)
 			}
 		}
+	})
+
+	describe('the ports page', () => {
+		const request = (method: string, path: string, body?: unknown, headers = {}) => ({
+			method,
+			path,
+			baseUrl: '',
+			originalUrl: path,
+			hostname: 'companion.local',
+			ip: '127.0.0.1',
+			query: {},
+			headers: { host: 'companion.local:8000', ...headers },
+			body: body === undefined ? undefined : JSON.stringify(body),
+		})
+		const send = async (method: string, path: string, body?: unknown, headers = {}) => {
+			const response = await module.handleHttpRequest(request(method, path, body, headers))
+			return { status: response.status, json: JSON.parse(response.body ?? '{}') as Record<string, any> }
+		}
+		const none = { names: [], inputHdcp: [], outputHdcp: [], edids: [] }
+		const ready = async (): Promise<void> => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+		}
+
+		it('serves a page whose script parses and never writes names as markup', async () => {
+			await ready()
+			const response = await module.handleHttpRequest(request('GET', '/'))
+			expect(response.status).toBe(200)
+			expect(response.headers?.['Content-Type']).toContain('text/html')
+			const body = response.body ?? ''
+			expect(body).not.toContain('innerHTML')
+			const script = /<script>([\s\S]*)<\/script>/.exec(body)?.[1] ?? ''
+			expect(script.length).toBeGreaterThan(1000)
+			expect(() => new Script(script)).not.toThrow()
+		})
+
+		it('works out a plain name in the page just as the module does', async () => {
+			await ready()
+			const body = (await module.handleHttpRequest(request('GET', '/'))).body ?? ''
+			const code = /const SUBSTITUTES = [\s\S]*?\n}\n/.exec(body)?.[0] ?? ''
+			const pagePlainName = new Script(`${code}; plainName`).runInNewContext() as (name: string) => string
+			for (const name of ['Café', 'Müller Straße', 'Søren Æ', '1920×1080', 'Cam – 1', '🎥 Cam 🎥 1', '🎥', ' plain ']) {
+				expect(pagePlainName(name)).toBe(plainName(name))
+			}
+		})
+
+		it('reads just the stored EDIDs', async () => {
+			await ready()
+			const { status, json } = await send('GET', '/edids')
+			expect(status).toBe(200)
+			expect(json.edids.length).toBeGreaterThan(0)
+			expect(json.inputs).toBeUndefined()
+		})
+
+		it('tells the page where the router is, for its own WebSocket', async () => {
+			await ready()
+			const { json } = await send('GET', '/ports')
+			expect(json.router).toBe(`127.0.0.1:${port}`)
+		})
+
+		it('reads every port and EDID slot, in number order', async () => {
+			await ready()
+			fake.inputHdcp[7] = '0'
+			fake.emulated[1] = 'U1'
+			const { status, json } = await send('GET', '/ports')
+			expect(status).toBe(200)
+			expect(json.inputs).toHaveLength(8)
+			expect(json.inputs[7]).toMatchObject({ port: 8, name: 'Input 8', edid: 'F137', hdcp: '0' })
+			expect(json.inputs[1].edid).toBe('U1')
+			expect(json.outputs[0]).toEqual({ port: 1, name: 'Output 1', hdcp: 'AUTO' })
+			const ids = json.edids.map((slot: { id: string }) => slot.id)
+			expect(ids.slice(0, 2)).toEqual(['F1', 'F137'])
+			expect(ids.filter((id: string) => id.startsWith('U')).slice(0, 3)).toEqual(['U1', 'U2', 'U3'])
+			expect(json.edids.find((slot: { id: string }) => slot.id === 'U2').valid).toBe(false)
+		})
+
+		it('applies names, HDCP and EDIDs, sending the EDIDs as one command', async () => {
+			await ready()
+			const { status, json } = await send('POST', '/ports', {
+				names: [{ port: 'I2', name: 'Cam (2) #1' }],
+				inputHdcp: [{ port: 8, value: '0' }],
+				outputHdcp: [{ port: 8, value: 'ALWAYS' }],
+				edids: [
+					{ port: 7, slot: 'F1' },
+					{ port: 8, slot: 'U1' },
+				],
+			})
+			expect(status).toBe(200)
+			expect(json.errors).toEqual({})
+			expect(writes()).toEqual([
+				'SET /MEDIA/NAMES/VIDEO.I2=2;Cam (2) #1',
+				'SET /MEDIA/PORTS/VIDEO/I8/SETTINGS.HdcpVersion=0',
+				'SET /MEDIA/PORTS/VIDEO/O8/SETTINGS.HdcpMode=ALWAYS',
+				'CALL /EDID:switch(F1:E7;U1:E8)',
+			])
+			expect(json.snapshot.inputs[1].name).toBe('Cam (2) #1')
+			expect(json.snapshot.inputs[7]).toMatchObject({ edid: 'U1', hdcp: '0' })
+			expect(variable(module, 'name_I2')).toBe('Cam (2) #1')
+		})
+
+		it.each([
+			[{ names: [{ port: 'I2', name: 'Café' }] }, 'plain characters'],
+			[{ names: [{ port: 'I2', name: 'X'.repeat(63) }] }, 'at most'],
+			[{ names: [{ port: 'I2', name: '   ' }] }, 'needs a name'],
+			[{ names: [{ port: 'I99', name: 'Nope' }] }, 'No such port'],
+			[{ edids: [{ port: 1, slot: 'U50' }] }, 'holds no EDID'],
+			[{ inputHdcp: [{ port: 1, value: '1' }] }, 'unknown HDCP'],
+			[{ outputHdcp: [{ port: 99, value: 'AUTO' }] }, 'No such port'],
+		])('sends nothing at all when one change is bad: %j', async (bad, message) => {
+			await ready()
+			const { status, json } = await send('POST', '/ports', {
+				...none,
+				names: [{ port: 'I1', name: 'Good' }],
+				...bad,
+			})
+			expect(status).toBe(400)
+			expect(json.error).toContain(message)
+			expect(writes()).toEqual([])
+		})
+
+		it('stores and deletes an EDID, and only in a U slot', async () => {
+			await ready()
+			const stored = await send('POST', '/edid/store', { from: 'D1', to: 'U100' })
+			expect(stored.status).toBe(200)
+			expect(stored.json.snapshot.edids.find((slot: { id: string }) => slot.id === 'U100').valid).toBe(true)
+			const gone = await send('POST', '/edid/delete', { slot: 'U100' })
+			expect(gone.json.snapshot.edids.find((slot: { id: string }) => slot.id === 'U100').valid).toBe(false)
+			expect((await send('POST', '/edid/store', { from: 'D1', to: 'F1' })).status).toBe(400)
+			expect((await send('POST', '/edid/store', { from: 'U50', to: 'U51' })).status).toBe(400)
+			expect((await send('POST', '/edid/delete', { slot: 'F1' })).status).toBe(400)
+			expect(writes()).toEqual(['CALL /EDID:copy(D1:U100)', 'CALL /EDID:delete(U100)'])
+		})
+
+		it('refuses changes from another website', async () => {
+			await ready()
+			const { status } = await send('POST', '/ports', none, { origin: 'http://evil.example' })
+			expect(status).toBe(403)
+		})
+
+		it('says when the router is not connected', async () => {
+			await module.init({ host: '' })
+			expect((await send('GET', '/ports')).status).toBe(503)
+			expect((await send('POST', '/ports', none)).status).toBe(503)
+		})
+	})
+
+	it('sends the nearest plain name, and says so', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		await module.renamePort('I2', 'Café')
+		expect(writes()).toEqual(['SET /MEDIA/NAMES/VIDEO.I2=2;Cafe'])
+		expect(logged(module, 'info').join()).toContain('"Café" is sent as "Cafe"')
+	})
+
+	it('refuses a name with nothing plain in it', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		await module.renamePort('I2', '🎥')
+		expect(writes()).toEqual([])
+	})
+
+	it('shows names with the characters the router reports escaped', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		fake.renameFromPanel('O3', 'Mon (3) #1')
+		await until(() => variable(module, 'name_O3') === 'Mon (3) #1')
 	})
 
 	it('has no one-press preset that restarts the router', async () => {

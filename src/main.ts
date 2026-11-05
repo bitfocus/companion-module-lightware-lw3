@@ -1,4 +1,11 @@
-import { InstanceBase, InstanceStatus, TCPHelper, type SomeCompanionConfigField } from '@companion-module/base'
+import {
+	InstanceBase,
+	InstanceStatus,
+	TCPHelper,
+	type CompanionHTTPRequest,
+	type CompanionHTTPResponse,
+	type SomeCompanionConfigField,
+} from '@companion-module/base'
 import { UpdateActions, type ActionsSchema, type LockCommand } from './actions.js'
 import { Lw3Client } from './client.js'
 import {
@@ -9,14 +16,25 @@ import {
 	type ModuleConfig,
 } from './config.js'
 import { UpdateFeedbacks, type FeedbacksSchema } from './feedbacks.js'
+import {
+	handlePortsRequest,
+	type ChangeErrors,
+	type EdidSlot,
+	type PortChanges,
+	type PortsSnapshot,
+} from './ports-page.js'
 import { UpdatePresets } from './presets.js'
 import {
 	Cmd,
 	DEFAULT_PORT,
+	EDID_BANKS,
 	ErrorCode,
 	MAX_NAME_LENGTH,
 	cleanName,
 	isSafePresetName,
+	plainName,
+	parseEdidProperty,
+	parseEdidStatus,
 	parseList,
 	parsePortName,
 	parsePortStatus,
@@ -111,14 +129,141 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	async configUpdated(config: ModuleConfig): Promise<void> {
 		const previous = this.config
+		const previousMode = this.autoRouteMode
 		this.config = config
-		this.#publishAutoRouteMode()
+		this.#autoRouteModeChanged(previousMode)
 		if (config.host === previous.host && config.port === previous.port) return
 		this.#connect()
 	}
 
 	getConfigFields(): SomeCompanionConfigField[] {
-		return GetConfigFields()
+		return GetConfigFields(this.label)
+	}
+
+	async handleHttpRequest(request: CompanionHTTPRequest): Promise<CompanionHTTPResponse> {
+		const host = {
+			connected: !!this.#socket?.isConnected,
+			routerAddress: `${this.config.host}:${this.config.port ?? DEFAULT_PORT}`,
+			readPorts: async () => this.#readPorts(),
+			readEdids: async () => this.#readEdidSlots(),
+			applyPorts: async (changes: PortChanges) => this.#applyPorts(changes),
+			storeEdid: async (from: string, to: string) =>
+				this.#edidCommand(Cmd.copyEdid(from, to), `Stored ${from} in ${to}`),
+			deleteEdid: async (slot: string) => this.#edidCommand(Cmd.deleteEdid(slot), `Deleted the EDID in ${slot}`),
+		}
+		return handlePortsRequest(host, request)
+	}
+
+	/** Read fresh for the ports page, which is the only thing that uses these */
+	async #readPorts(): Promise<PortsSnapshot | undefined> {
+		const { state } = this
+		if (!this.#socket?.isConnected || state.inputCount === 0) return undefined
+		const valueOf = async (command: string): Promise<string | undefined> => {
+			const lines = await this.#client.request(command)
+			return lines === undefined ? undefined : (parseProperty(lines[0] ?? '')?.value ?? '')
+		}
+		const status = await valueOf(Cmd.edidStatus)
+		if (status === undefined) return undefined
+		const emulated = parseEdidStatus(status)
+
+		const inputs: PortsSnapshot['inputs'] = []
+		for (let port = 1; port <= state.inputCount; port++) {
+			const hdcp = await valueOf(Cmd.inputHdcp(port))
+			if (hdcp === undefined) return undefined
+			inputs.push({
+				port,
+				name: state.inputName(port),
+				edid: emulated[port - 1] ?? '',
+				hdcp,
+				signal: state.sourceStatus.get(port)?.signal === true,
+			})
+		}
+		const outputs: PortsSnapshot['outputs'] = []
+		for (let port = 1; port <= state.outputCount; port++) {
+			const hdcp = await valueOf(Cmd.outputHdcp(port))
+			if (hdcp === undefined) return undefined
+			outputs.push({ port, name: state.outputName(port), hdcp })
+		}
+		const edids = await this.#readEdidSlots()
+		return edids && { inputs, outputs, edids }
+	}
+
+	async #readEdidSlots(): Promise<EdidSlot[] | undefined> {
+		const slots: EdidSlot[] = []
+		for (const bank of EDID_BANKS) {
+			const found = new Map<string, EdidSlot>()
+			const slot = (id: string): EdidSlot => {
+				let existing = found.get(id)
+				if (!existing) {
+					existing = { id, name: '', resolution: '', valid: false }
+					found.set(id, existing)
+				}
+				return existing
+			}
+			const read = async (
+				property: 'Validity' | 'MonitorName' | 'PreferredResolution',
+				apply: (target: EdidSlot, value: string) => void,
+			): Promise<boolean> => {
+				const lines = await this.#client.request(Cmd.edidBank(bank, property))
+				if (lines === undefined) return false
+				for (const line of lines) {
+					const parsed = parseEdidProperty(line)
+					if (parsed) apply(slot(parsed.slot), parsed.value)
+				}
+				return true
+			}
+			const complete =
+				(await read('Validity', (target, value) => (target.valid = value === 'true'))) &&
+				(await read('MonitorName', (target, value) => (target.name = value))) &&
+				(await read('PreferredResolution', (target, value) => (target.resolution = value)))
+			if (!complete) return undefined
+			// the router lists them in text order: F1, F10, F100
+			slots.push(...[...found.values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1))))
+		}
+		return slots
+	}
+
+	/** Everything is tried, so one refusal doesn't leave the rest unsent. Names first, as they can't disturb a picture. */
+	async #applyPorts(changes: PortChanges): Promise<ChangeErrors> {
+		const errors: ChangeErrors = {}
+		for (const { port, name } of changes.names) {
+			const error = await this.#rename(port as PortId, name)
+			if (error) errors[`${port} name`] = error
+		}
+		const send = async (command: string, key: string): Promise<void> => {
+			const lines = await this.#client.request(command, true)
+			if (lines === undefined) errors[key] = 'Not connected'
+			else {
+				const error = replyError(lines)
+				if (error) errors[key] = `${error.code} ${error.message}`
+			}
+		}
+		for (const { port, value } of changes.inputHdcp) await send(Cmd.setInputHdcp(port, value), `I${port} hdcp`)
+		for (const { port, value } of changes.outputHdcp) await send(Cmd.setOutputHdcp(port, value), `O${port} hdcp`)
+		if (changes.edids.length > 0) {
+			const lines = await this.#client.request(
+				Cmd.switchEdid(changes.edids.map(({ port, slot }) => ({ input: port, slot }))),
+				true,
+			)
+			const error = lines === undefined ? 'Not connected' : replyError(lines)?.message
+			if (error) for (const { port } of changes.edids) errors[`I${port} edid`] = error
+		}
+		const sent = changes.names.length + changes.inputHdcp.length + changes.outputHdcp.length + changes.edids.length
+		const failed = Object.keys(errors).length
+		this.log(failed ? 'warn' : 'info', `Ports page: ${sent} changes sent, ${failed} refused`)
+		return errors
+	}
+
+	async #edidCommand(command: string, done: string): Promise<string | undefined> {
+		const lines = await this.#client.request(command, true)
+		if (lines === undefined) return 'Not connected'
+		const error = replyError(lines)
+		if (error) {
+			this.log('warn', `The router refused: ${command}: ${error.message}`)
+			return error.message
+		}
+		this.log('info', `Ports page: ${done}`)
+		return undefined
 	}
 
 	// ---- actions ----------------------------------------------------------------------------
@@ -149,7 +294,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return this.config.autoRoute ?? 'off'
 	}
 
-	/** Saved in the connection settings. It applies from the next selection, so changing it never routes anything. */
+	/**
+	 * Saved in the connection settings. It applies from the next selection, so changing it never routes
+	 * anything. Leaving Stage discards what was staged, so that a later take can't send forgotten routes.
+	 */
 	setAutoRouteMode(value: string): void {
 		const current = AUTO_ROUTE_ORDER.indexOf(this.autoRouteMode)
 		const mode =
@@ -157,10 +305,27 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				? AUTO_ROUTE_ORDER[(current + 1) % AUTO_ROUTE_ORDER.length]
 				: AUTO_ROUTE_ORDER.find((candidate) => candidate === value)
 		if (mode === undefined || mode === this.autoRouteMode) return
+		const previous = this.autoRouteMode
 		this.config = { ...this.config, autoRoute: mode }
 		this.saveConfig(this.config, undefined)
 		this.log('info', `Auto-route mode: ${AUTO_ROUTE_LABELS[mode]}`)
+		this.#autoRouteModeChanged(previous)
+	}
+
+	#autoRouteModeChanged(previous: AutoRouteMode): void {
 		this.#publishAutoRouteMode()
+		if (previous !== 'stage' || this.autoRouteMode === 'stage') return
+		const { state } = this
+		const waiting = state.stagedRoutes()
+		if (waiting.length > 0) {
+			const list = waiting
+				.map(
+					({ input, output }) => `${input === 0 ? 'nothing' : state.inputName(input)} to ${state.outputName(output)}`,
+				)
+				.join(', ')
+			this.log('info', `Left Stage, so the staged routes were discarded: ${list}`)
+		}
+		this.clearStaged()
 	}
 
 	#publishAutoRouteMode(): void {
@@ -229,8 +394,28 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.#stagedChanged()
 	}
 
+	/** One press for everything lined up: what is staged, and a selected pair that isn't yet */
+	async take(): Promise<void> {
+		const { selectedInput: input, selectedOutput: output, pairStaged, staged } = this.state
+		const pair = input !== undefined && output !== undefined && !pairStaged ? { input, output } : undefined
+		if (staged.size > 0) {
+			await this.#sendStaged(pair)
+		} else if (pairStaged) {
+			// its staged route is already live, so what is still on show has nothing to send
+			this.log('info', 'Nothing is staged to take')
+		} else {
+			await this.takeSelection()
+		}
+	}
+
 	async takeStaged(): Promise<void> {
-		const routes = this.state.stagedRoutes()
+		await this.#sendStaged()
+	}
+
+	/** A selected pair replaces anything staged for the same output, being the more recent */
+	async #sendStaged(pair?: Route): Promise<void> {
+		const staged = this.state.stagedRoutes()
+		const routes = pair ? [...staged.filter(({ output }) => output !== pair.output), pair] : staged
 		if (routes.length === 0) {
 			// everything staged is already live, so there is nothing to send or to keep waiting
 			this.state.staged.clear()
@@ -238,12 +423,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.#stagedChanged()
 			return
 		}
-		const free = routes.filter(({ output }) => {
-			if (!this.state.isLocked(output)) return true
-			this.log('warn', `${this.state.outputName(output)} is locked, so its staged route stays staged`)
+		const free = routes.filter((route) => {
+			if (!this.state.isLocked(route.output)) return true
+			const left = route === pair ? 'its route stays selected' : 'its staged route stays staged'
+			this.log('warn', `${this.state.outputName(route.output)} is locked, so ${left}`)
 			return false
 		})
 		if (free.length === 0) return
+		const pairStaysSelected = pair !== undefined && !free.includes(pair)
 		if (await this.#switch(free)) {
 			for (const { output } of free) this.state.staged.delete(output)
 			// what stayed behind and is already live has nothing left to wait for
@@ -252,15 +439,22 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			}
 			this.state.stagedPreset = undefined
 			this.#stagedChanged()
+			if (pairStaysSelected) return
 			this.state.clearSelection()
 			this.#selectionChanged()
 		}
 	}
 
+	/** A pair that was staged goes too, and in Stage so does anything half selected, for a clean start */
 	clearStaged(): void {
-		this.state.staged.clear()
-		this.state.stagedPreset = undefined
+		const { state } = this
+		state.staged.clear()
+		state.stagedPreset = undefined
 		this.#stagedChanged()
+		if (state.pairStaged || this.autoRouteMode === 'stage') {
+			state.clearSelection()
+			this.#selectionChanged()
+		}
 	}
 
 	/** Follows the auto-route mode: in Stage the preset's routes wait for a take */
@@ -345,32 +539,35 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async renamePort(port: string, name: string): Promise<void> {
-		const clean = cleanName(name)
+		const typed = cleanName(name)
+		const clean = plainName(typed)
 		if (!/^[IO]\d+$/.test(port) || clean === '') {
 			this.log('warn', `Can't rename ${port} to "${name}"`)
 			return
 		}
-		const id = port as PortId
-		// the router requires a number before the name. Keep the one the port has.
-		const prefix = this.state.names.get(id)?.prefix ?? '2'
+		if (clean !== typed)
+			this.log('info', `The router only stores plain characters, so "${typed}" is sent as "${clean}"`)
 		if (clean.length > MAX_NAME_LENGTH) {
 			this.log('warn', `The router only keeps the first ${MAX_NAME_LENGTH} characters of "${clean}"`)
 		}
+		const error = await this.#rename(port as PortId, clean)
+		if (error) this.log('warn', `The router refused the name "${clean}": ${error}`)
+	}
+
+	/** Returns why it failed, if it did */
+	async #rename(id: PortId, name: string): Promise<string | undefined> {
+		// the router requires a number before the name. Keep the one the port has.
+		const prefix = this.state.names.get(id)?.prefix ?? '2'
 		// the change message arrives ahead of the reply, so this has to be known before sending
 		this.#ownRenames.add(id)
-		const lines = await this.#client.request(Cmd.rename(id, prefix, clean), true)
+		const lines = await this.#client.request(Cmd.rename(id, prefix, name), true)
 		this.#ownRenames.delete(id)
-		if (lines === undefined) {
-			this.log('warn', `Not connected, so ${port} wasn't renamed`)
-			return
-		}
+		if (lines === undefined) return 'Not connected'
 		const error = replyError(lines)
-		if (error) {
-			this.log('warn', `The router refused the name "${clean}": ${error.message}`)
-			return
-		}
+		if (error) return error.message
 		// the reply has what the router stored, which may be shorter than what was sent
 		for (const line of lines) this.#applyProperty(parseProperty(line))
+		return undefined
 	}
 
 	async softReset(): Promise<void> {
@@ -644,6 +841,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			'routedInput',
 			'routedOutput',
 			'sourceSelected',
+			'outputNext',
 			'outputStaged',
 			'stagedWaiting',
 			'presetLive',
@@ -741,13 +939,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		// start from the bright half, so a press shows straight away
 		this.#stopFlash()
 		this.#syncFlash()
-		this.checkFeedbacks('route', 'routedInput', 'routedOutput', 'sourceSelected', 'destinationSelected')
+		this.checkFeedbacks('route', 'routedInput', 'routedOutput', 'sourceSelected', 'destinationSelected', 'outputNext')
 	}
 
 	#stagedChanged(): void {
 		this.setVariableValues(routeValues(this.state))
 		this.#syncFlash()
-		this.checkFeedbacks('outputStaged', 'stagedWaiting', 'presetStaged')
+		this.checkFeedbacks('outputStaged', 'stagedWaiting', 'stagedRoutes', 'presetStaged')
 	}
 
 	#presetContentsChanged(): void {

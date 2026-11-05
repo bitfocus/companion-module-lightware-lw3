@@ -10,7 +10,9 @@ export type FeedbacksSchema = {
 	autoRouteMode: { type: 'boolean'; options: { mode: string } }
 	outputLocked: { type: 'boolean'; options: { output: string } }
 	outputStaged: { type: 'boolean'; options: { output: string } }
+	outputNext: { type: 'boolean'; options: { output: string } }
 	stagedWaiting: { type: 'boolean'; options: Record<string, never> }
+	stagedRoutes: { type: 'boolean'; options: Record<string, never> }
 	portSignal: { type: 'boolean'; options: { port: string } }
 	portConnected: { type: 'boolean'; options: { port: string } }
 	presetLive: { type: 'boolean'; options: { preset: string } }
@@ -131,6 +133,15 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				return output !== undefined && state.pendingInput(output) !== undefined
 			},
 		},
+		outputNext: {
+			type: 'boolean',
+			name: 'Selected output has a new input waiting',
+			description: 'True while the selected input is not yet on this selected output and is not staged',
+			defaultStyle: { bgcolor: 0xffff00, color: 0x000000 },
+			options: [{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs }],
+			callback: (feedback) =>
+				portNumber(feedback.options.output, 'O') === state.selectedOutput && state.nextInput !== undefined,
+		},
 		stagedWaiting: {
 			type: 'boolean',
 			name: 'Staged routes waiting',
@@ -138,6 +149,14 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
 			options: [],
 			callback: () => state.hasStagedRoutes && state.flashOn,
+		},
+		stagedRoutes: {
+			type: 'boolean',
+			name: 'Staged routes waiting (steady)',
+			description: 'True while routes are staged and have not been taken, without flashing',
+			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
+			options: [],
+			callback: () => state.hasStagedRoutes,
 		},
 		portSignal: {
 			type: 'boolean',

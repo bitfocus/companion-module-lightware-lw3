@@ -9,6 +9,11 @@ export const DEFAULT_PORT = 6107
 const XP = '/MEDIA/XP/VIDEO'
 const NAMES = '/MEDIA/NAMES/VIDEO'
 const PRESETS = '/MEDIA/PRESET'
+const PORTS = '/MEDIA/PORTS/VIDEO'
+
+export const EDID_BANKS = ['F', 'D', 'U'] as const
+export type EdidBank = (typeof EDID_BANKS)[number]
+export type EdidProperty = 'Validity' | 'MonitorName' | 'PreferredResolution'
 
 /** Longest name the router stores: it keeps the first 62 characters of anything longer */
 export const MAX_NAME_LENGTH = 62
@@ -43,6 +48,18 @@ export const Cmd = {
 	names: `GET ${NAMES}.*`,
 	presets: `GET ${PRESETS}`,
 	softReset: 'CALL /SYS:softReset()',
+	inputHdcp: (input: number): string => `GET ${PORTS}/I${input}/SETTINGS.HdcpVersion`,
+	outputHdcp: (output: number): string => `GET ${PORTS}/O${output}/SETTINGS.HdcpMode`,
+	setInputHdcp: (input: number, value: string): string => `SET ${PORTS}/I${input}/SETTINGS.HdcpVersion=${value}`,
+	setOutputHdcp: (output: number, value: string): string => `SET ${PORTS}/O${output}/SETTINGS.HdcpMode=${value}`,
+	edidStatus: 'GET /EDID.EdidStatus',
+	/** All of one property in a bank, such as F, which comes back quickly and in text order: F1, F10, F100 */
+	edidBank: (bank: EdidBank, property: EdidProperty): string => `GET /EDID/${bank}/*.${property}`,
+	/** Several in one command change together. The manual's comma form is refused. */
+	switchEdid: (changes: { slot: string; input: number }[]): string =>
+		`CALL /EDID:switch(${changes.map(({ slot, input }) => `${slot}:E${input}`).join(';')})`,
+	copyEdid: (from: string, to: string): string => `CALL /EDID:copy(${from}:${to})`,
+	deleteEdid: (slot: string): string => `CALL /EDID:delete(${slot})`,
 	presetRoutes: (name: string): string => `GET ${PRESETS}/${name}.VideoDestination`,
 	loadPreset: (name: string): string => `CALL ${PRESETS}/${name}:load()`,
 	/** Several routes in one command change together, in a single change message */
@@ -167,7 +184,73 @@ export function parsePortName(port: string, value: string): PortName | undefined
 	const portMatch = /^[IO]\d+$/.exec(port)
 	const separator = value.indexOf(';')
 	if (!portMatch || separator === -1) return undefined
-	return { port: port as PortId, prefix: value.slice(0, separator), name: value.slice(separator + 1) }
+	return { port: port as PortId, prefix: value.slice(0, separator), name: unescapeValue(value.slice(separator + 1)) }
+}
+
+/** The router adds a backslash to some characters when it reports a value, such as \( \) \# \% \\ */
+export function unescapeValue(value: string): string {
+	return value.replace(/\\(.)/g, '$1')
+}
+
+/** The router mangles anything else, such as accents: `Café` reads back as `Caf` */
+export function isValidName(name: string): boolean {
+	return /^[\x20-\x7e]+$/.test(name)
+}
+
+/** Stand-ins for characters that don't reduce to a plain letter by removing an accent */
+export const NAME_SUBSTITUTES: Record<string, string> = {
+	ß: 'ss',
+	ẞ: 'SS',
+	æ: 'ae',
+	Æ: 'AE',
+	œ: 'oe',
+	Œ: 'OE',
+	ø: 'o',
+	Ø: 'O',
+	đ: 'd',
+	Đ: 'D',
+	ð: 'd',
+	Ð: 'D',
+	þ: 'th',
+	Þ: 'Th',
+	ł: 'l',
+	Ł: 'L',
+	ı: 'i',
+	'\u00a0': ' ',
+	'–': '-',
+	'—': '-',
+	'‘': "'",
+	'’': "'",
+	'“': '"',
+	'”': '"',
+	'…': '...',
+	'×': 'x',
+}
+
+/**
+ * The nearest name the router can store: `Café` to `Cafe`, with anything that has no plain version, such
+ * as emoji, removed. A name that is already plain only loses its outer spaces.
+ */
+export function plainName(name: string): string {
+	if (/^[\x20-\x7e]*$/.test(name)) return name.trim()
+	return [...name.normalize('NFD')]
+		.map((character) => NAME_SUBSTITUTES[character] ?? character)
+		.join('')
+		.replace(/[^\x20-\x7e]/g, '')
+		.replace(/ {2,}/g, ' ')
+		.trim()
+}
+
+/** The value of `/EDID.EdidStatus`, the EDID emulated on each input, such as `F137;F137` */
+export function parseEdidStatus(value: string): string[] {
+	return parseList(value)
+}
+
+/** `pr /EDID/F/F1.MonitorName=D640x480p60` to `F1` and the value */
+export function parseEdidProperty(line: string): { slot: string; value: string } | undefined {
+	const property = parseProperty(line)
+	const slot = property && /^\/EDID\/[FDU]\/([FDU]\d+)$/.exec(property.path)?.[1]
+	return property && slot ? { slot, value: property.value } : undefined
 }
 
 /** What to send for a name: no control characters, as they would end the command */

@@ -11,6 +11,7 @@ export type ActionsSchema = {
 	preset: { options: { preset: string } }
 	selectSource: { options: { port: string } }
 	selectDestination: { options: { port: string } }
+	take: { options: NoOptions }
 	takeSalvo: { options: NoOptions }
 	stageSelected: { options: NoOptions }
 	stageRoute: { options: { input: string; output: string } }
@@ -79,8 +80,14 @@ export function UpdateActions(self: ModuleInstance): void {
 			options: [{ type: 'dropdown', id: 'port', label: 'Output', default: 'O1', choices: outputs }],
 			callback: (action) => self.selectOutput(portNumber(action.options.port, 'O')),
 		},
+		take: {
+			name: 'Take: send the staged routes and the selected input and output',
+			description: 'They are sent as one command, and the router changes them together.',
+			options: [],
+			callback: async () => self.take(),
+		},
 		takeSalvo: {
-			name: 'Take: route the selected input to the selected output, and clear the selection',
+			name: 'Take the selected input to the selected output only, and clear the selection',
 			options: [],
 			callback: async () => self.takeSelection(),
 		},
