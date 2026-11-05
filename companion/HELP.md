@@ -64,7 +64,7 @@ An output with no display shows no border even with a source routed to it, as th
 
 ### Port names, EDID and HDCP
 
-Open `/instance/<connection label>/` at this Companion's web address, which the connection settings also show. It's one page, titled with the router's name, with two tables, read fresh from the router each time it opens or you press Reload.
+Use the link in the connection settings, or add `/instance/<connection label>/` to this Companion's web address. It's one page, titled with the router's name, with two tables, read fresh from the router each time it opens or you press Reload.
 
 The page shows **Live** while it's listening to the router itself, so changes made elsewhere appear as they happen, and it says so on the row. If you're editing that cell your edit stays, with a note of what the router now has. **Not live** means this browser can't reach the router directly, or the router has run out of connections, as Lightware's devices limit how many WebSockets they allow. Everything else still works, but press Reload to see changes. The router never announces stored EDIDs, so they are read again when you click the filter box.
 

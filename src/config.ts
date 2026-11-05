@@ -51,7 +51,7 @@ export function GetConfigFields(label: string): SomeCompanionConfigField[] {
 			id: 'portsInfo',
 			width: 12,
 			label: 'Port names, EDID and HDCP',
-			value: `To edit many ports at once, open /instance/${label}/ at this Companion's web address, for example http://127.0.0.1:8000/instance/${label}/`,
+			value: `To edit many ports at once, [open the ports page](/instance/${label}/).`,
 		},
 	]
 }
