@@ -50,11 +50,21 @@ A route to a locked output is refused by the router, and the log says so.
 
 ### Port status
 
+Input and output buttons have a coloured border, in the colours of the router's own web interface:
+
+- **No border:** not connected
+- **Yellow:** connected, no signal
+- **Orange:** DVI signal
+- **Light blue:** HDMI signal, up to 9G
+- **Dark blue:** HDMI signal, up to 18G
+
+An output with no display shows no border even with a source routed to it, as the router's interface does. The plain fallback buttons have no border. DisplayPort has its own legend in the router's interface, which the module doesn't show yet. The **Port status** feedback gives you the same states for your own buttons.
+
 **Signal on a port** and **Cable connected to a port** come from the router's own port status. On an output, signal means a live input is routed to it, not that a display is there: use **Cable connected** for that.
 
 ### Port names, EDID and HDCP
 
-Open `/instance/<connection label>/` at this Companion's web address, which the connection settings also show. It's one page with two tables, read fresh from the router each time it opens or you press Reload.
+Open `/instance/<connection label>/` at this Companion's web address, which the connection settings also show. It's one page, titled with the router's name, with two tables, read fresh from the router each time it opens or you press Reload.
 
 The page shows **Live** while it's listening to the router itself, so changes made elsewhere appear as they happen, and it says so on the row. If you're editing that cell your edit stays, with a note of what the router now has. **Not live** means this browser can't reach the router directly, or the router has run out of connections, as Lightware's devices limit how many WebSockets they allow. Everything else still works, but press Reload to see changes. The router never announces stored EDIDs, so they are read again when you click the filter box.
 
@@ -62,6 +72,7 @@ Change as many ports as you like, then press **Apply**. It lists what will chang
 
 You can paste from a spreadsheet into a Name cell: lines fill downward, and tabs fill across. A line starting with a port, such as `I3`, goes to that port. Blank cells are left alone.
 
+- **Router name** can be up to 39 plain characters. It's also in the `router_name` variable.
 - **Names** can be up to 62 plain characters, as the router mangles accents and emoji. What you type stays in the cell, with a note of what will be sent: `Café` is sent as `Cafe`, and emoji are removed. Apply lists it too. The **Rename a port** action does the same.
 - **EDID** offers what the router holds. The filter box narrows the lists: spaces mean "and", so `3840 p60` finds names with both. An input's current EDID stays listed whatever the filter says. F is factory, U is stored by you and D is dynamic, which follows the last display seen on that output and can change by itself, so it shows orange.
 - **HDCP** on an input is the maximum it offers: Off, HDCP 2.2 or HDCP 2.2 Strict. On an output, Always encrypts everything, and Auto follows the input.
@@ -85,4 +96,4 @@ The log shows what was found on connecting, reconnects, routes, names and locks 
 - `stagedname_O1`: the name of the input staged for output 1
 - `live_preset`: a router preset matching the current routes, or `None`
 - `selected_input_label`, `selected_output_label`, `selected_output_source`, `selected_output_lock_text`: for button text
-- `model`, `firmware`, `inputs`, `outputs`
+- `model`, `router_name`, `firmware`, `inputs`, `outputs`

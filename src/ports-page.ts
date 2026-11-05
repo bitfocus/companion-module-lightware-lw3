@@ -1,5 +1,5 @@
 import type { CompanionHTTPRequest, CompanionHTTPResponse } from '@companion-module/base'
-import { MAX_NAME_LENGTH, NAME_SUBSTITUTES, isValidName } from './protocol.js'
+import { MAX_NAME_LENGTH, MAX_ROUTER_NAME_LENGTH, NAME_SUBSTITUTES, isValidName } from './protocol.js'
 
 export interface EdidSlot {
 	id: string
@@ -23,12 +23,14 @@ export interface OutputRow {
 }
 
 export interface PortsSnapshot {
+	routerName: string
 	inputs: InputRow[]
 	outputs: OutputRow[]
 	edids: EdidSlot[]
 }
 
 export interface PortChanges {
+	routerName?: string
 	names: { port: string; name: string }[]
 	inputHdcp: { port: number; value: string }[]
 	outputHdcp: { port: number; value: string }[]
@@ -86,6 +88,12 @@ export function checkChanges(changes: PortChanges, snapshot: PortsSnapshot): str
 	const outputs = new Set(snapshot.outputs.map((row) => row.port))
 	const usable = new Set(snapshot.edids.filter((slot) => slot.valid).map((slot) => slot.id))
 
+	if (changes.routerName !== undefined) {
+		if (changes.routerName === '') return 'The router needs a name'
+		if (changes.routerName.length > MAX_ROUTER_NAME_LENGTH)
+			return `The router name can be ${MAX_ROUTER_NAME_LENGTH} characters at most`
+		if (!isValidName(changes.routerName)) return 'The router name can only have plain characters'
+	}
 	for (const { port, name } of changes.names) {
 		const match = /^([IO])(\d+)$/.exec(port)
 		const known = match && (match[1] === 'I' ? inputs : outputs).has(Number(match[2]))
@@ -111,7 +119,7 @@ export function checkChanges(changes: PortChanges, snapshot: PortsSnapshot): str
 }
 
 function readChanges(body: Record<string, unknown>): PortChanges | undefined {
-	const { names, inputHdcp, outputHdcp, edids } = body
+	const { routerName, names, inputHdcp, outputHdcp, edids } = body
 	const lists = [names, inputHdcp, outputHdcp, edids]
 	if (!lists.every(Array.isArray)) return undefined
 	const texts = (names as { port?: unknown; name?: unknown }[]).map(({ port, name }) => ({
@@ -124,6 +132,7 @@ function readChanges(body: Record<string, unknown>): PortChanges | undefined {
 			value: String(value),
 		}))
 	return {
+		...(routerName === undefined ? {} : { routerName: typeof routerName === 'string' ? routerName.trim() : '' }),
 		names: texts,
 		inputHdcp: settings(inputHdcp),
 		outputHdcp: settings(outputHdcp),
@@ -228,6 +237,10 @@ input.invalid { outline: 2px solid var(--bad); }
 .sent-as:empty { display: none; }
 h1 small { font-size: 12px; font-weight: 500; margin-left: 8px; color: GrayText; }
 h1 small.on { color: var(--good); }
+.router-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; padding: 4px; }
+.router-row label { font-weight: 500; }
+.router-row input { flex: 1 1 200px; width: auto; max-width: 360px; }
+.router-row.changed { background: var(--changed); }
 .filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
 .filter input { flex: 1 1 200px; width: auto; max-width: 360px; }
 .note { color: GrayText; margin: 4px 0; }
@@ -243,7 +256,7 @@ dialog .warn { color: var(--bad); }
 </head>
 <body>
 <header>
-<h1>Lightware ports<small id="live">Not live</small></h1>
+<h1><span id="title">Lightware ports</span><small id="live">Not live</small></h1>
 <button id="apply" disabled>Apply</button>
 <button id="reload">Reload</button>
 <button id="revert" disabled title="Fill in the values from before the last Apply">Revert last Apply</button>
@@ -251,6 +264,7 @@ dialog .warn { color: var(--bad); }
 <div id="message"></div>
 </header>
 <main>
+<div id="router-row"></div>
 <h2>Inputs</h2>
 <div class="filter">
 <input id="edid-filter" type="search" placeholder="Filter EDIDs, such as 3840 p60" aria-label="Filter the EDID lists">
@@ -293,7 +307,8 @@ const base = location.pathname.replace(/\/?$/, '/')
 const INPUT_HDCP = [['0', 'Off'], ['2', 'HDCP 2.2'], ['3', 'HDCP 2.2 Strict']]
 const OUTPUT_HDCP = [['AUTO', 'Auto'], ['ALWAYS', 'Always']]
 const COLUMNS = ['name', 'edid', 'hdcp']
-const MAX_NAME = 62
+const MAX_NAME = ${MAX_NAME_LENGTH}
+const MAX_ROUTER_NAME = ${MAX_ROUTER_NAME_LENGTH}
 const SUBSTITUTES = ${JSON.stringify(NAME_SUBSTITUTES)}
 function plainName(name) {
 	if (/^[\x20-\x7e]*$/.test(name)) return name.trim()
@@ -416,27 +431,53 @@ function buildRow(kind, data) {
 	return row
 }
 
+function buildRouterRow(name) {
+	const tr = document.createElement('div')
+	tr.className = 'router-row'
+	const label = document.createElement('label')
+	label.textContent = 'Router name'
+	label.htmlFor = 'router-name'
+	const input = document.createElement('input')
+	input.id = 'router-name'
+	input.value = name
+	const sentAs = document.createElement('span')
+	sentAs.className = 'sent-as'
+	const status = document.createElement('span')
+	status.className = 'status'
+	tr.append(label, input, sentAs, status)
+	const row = { kind: 'R', port: 'Router', tr, name: input, sentAs, status, max: MAX_ROUTER_NAME, original: { name } }
+	input.addEventListener('input', () => { setStatus(row, ''); refreshRow(row) })
+	return row
+}
+function showRouterName(name) {
+	const title = (name || 'Lightware') + ' ports'
+	$('title').textContent = title
+	document.title = title
+}
 function setStatus(row, text, className) {
 	row.status.textContent = text
 	row.status.className = 'status ' + (className || '')
 }
-const nameProblem = (value) => {
-	if (value.trim() === '') return 'Needs a name'
+const nameProblem = (value, original, max = MAX_NAME) => {
 	const plain = plainName(value)
+	// the router itself allows an empty router name, which shouldn't get in the way of anything else
+	if (plain === original) return ''
+	if (value.trim() === '') return 'Needs a name'
 	if (plain === '') return 'Nothing is left once accents and emoji are removed'
-	if (plain.length > MAX_NAME) return 'The router keeps ' + MAX_NAME + ' characters at most'
+	if (plain.length > max) return 'The router keeps ' + max + ' characters at most'
 	return ''
 }
 function changesOf(row) {
 	const found = []
 	if (plainName(row.name.value) !== row.original.name) found.push('name')
 	if (row.edid && row.edid.value !== row.original.edid) found.push('edid')
-	if (row.hdcp.value !== row.original.hdcp) found.push('hdcp')
+	if (row.hdcp && row.hdcp.value !== row.original.hdcp) found.push('hdcp')
 	return found
 }
 function refreshRow(row) {
 	row.tr.classList.toggle('changed', changesOf(row).length > 0)
-	const problem = nameProblem(row.name.value.trim())
+	if (row.kind === 'R') showRouterName(row.original.name)
+	const problem = nameProblem(row.name.value.trim(), row.original.name, row.max)
 	row.name.classList.toggle('invalid', problem !== '')
 	row.name.title = problem
 	const typed = row.name.value.trim()
@@ -447,7 +488,7 @@ function refreshRow(row) {
 }
 function refreshApply() {
 	const changed = rows.some((row) => changesOf(row).length > 0)
-	const bad = rows.some((row) => nameProblem(row.name.value.trim()) !== '')
+	const bad = rows.some((row) => nameProblem(row.name.value.trim(), row.original.name, row.max) !== '')
 	$('apply').disabled = !changed || bad
 }
 
@@ -455,6 +496,16 @@ function render(data) {
 	snapshot = data
 	const previous = new Map(rows.map((row) => [row.port, row.status.textContent + '|' + row.status.className]))
 	rows = []
+	const routerRow = buildRouterRow(data.routerName)
+	rows.push(routerRow)
+	$('router-row').replaceChildren(routerRow.tr)
+	refreshRow(routerRow)
+	const oldStatus = previous.get('Router')
+	if (oldStatus) {
+		const [text, className] = oldStatus.split('|')
+		routerRow.status.textContent = text
+		routerRow.status.className = className
+	}
 	for (const [kind, id, list] of [['I', 'inputs', data.inputs], ['O', 'outputs', data.outputs]]) {
 		const body = $(id).querySelector('tbody')
 		body.replaceChildren()
@@ -589,7 +640,7 @@ $('apply').addEventListener('click', async () => {
 			if (field === 'name') {
 				const typed = row.name.value.trim()
 				const plain = plainName(typed)
-				lines.push(row.port + ': name to "' + plain + '"' + (plain === typed ? '' : ' (typed as "' + typed + '")'))
+				lines.push((row.kind === 'R' ? 'Router name' : row.port + ': name') + ' to "' + plain + '"' + (plain === typed ? '' : ' (typed as "' + typed + '")'))
 			}
 			if (field === 'edid') lines.push(row.port + ': EDID to ' + edidLabel(row.edid.value))
 			if (field === 'hdcp') lines.push(row.port + ': HDCP to ' + hdcpLabel(row, row.hdcp.value))
@@ -603,14 +654,16 @@ $('apply').addEventListener('click', async () => {
 	if (!(await ask('Send ' + lines.length + ' change(s) to the router?', lines, warning))) return
 
 	const body = { names: [], inputHdcp: [], outputHdcp: [], edids: [] }
+	const routerRow = changed.find((row) => row.kind === 'R')
+	if (routerRow) body.routerName = plainName(routerRow.name.value)
 	for (const row of changed) {
 		for (const field of changesOf(row)) {
-			if (field === 'name') body.names.push({ port: row.port, name: plainName(row.name.value) })
+			if (field === 'name' && row.kind !== 'R') body.names.push({ port: row.port, name: plainName(row.name.value) })
 			if (field === 'edid') body.edids.push({ port: row.number, slot: row.edid.value })
 			if (field === 'hdcp') (row.kind === 'I' ? body.inputHdcp : body.outputHdcp).push({ port: row.number, value: row.hdcp.value })
 		}
 	}
-	const sent = new Map(changed.map((row) => [row.port, { name: plainName(row.name.value), edid: row.edid?.value, hdcp: row.hdcp.value, fields: changesOf(row) }]))
+	const sent = new Map(changed.map((row) => [row.port, { name: plainName(row.name.value), edid: row.edid?.value, hdcp: row.hdcp?.value, fields: changesOf(row) }]))
 	lastApplied = new Map(changed.map((row) => [row.port, { ...row.original }]))
 	$('apply').disabled = true
 	say('Sending...')
@@ -655,7 +708,7 @@ $('revert').addEventListener('click', () => {
 		if (!old) continue
 		row.name.value = old.name
 		if (row.edid) setEdid(row, old.edid)
-		row.hdcp.value = old.hdcp
+		if (row.hdcp) row.hdcp.value = old.hdcp
 		setStatus(row, 'Press Apply to restore')
 		refreshRow(row)
 	}
@@ -663,10 +716,11 @@ $('revert').addEventListener('click', () => {
 })
 
 $('copy').addEventListener('click', async () => {
-	const text = ['Port\tName\tEDID\tHDCP', ...rows.map((row) => [row.port, row.original.name, row.original.edid ?? '', row.original.hdcp].join('\t'))].join('\n')
+	const ports = rows.filter((row) => row.kind !== 'R')
+	const text = ['Port\tName\tEDID\tHDCP', ...ports.map((row) => [row.port, row.original.name, row.original.edid ?? '', row.original.hdcp].join('\t'))].join('\n')
 	try {
 		await navigator.clipboard.writeText(text)
-		say('Copied ' + rows.length + ' ports.')
+		say('Copied ' + ports.length + ' ports.')
 	} catch {
 		// the clipboard needs a secure page, which a plain http address on the network isn't
 		const area = document.createElement('textarea')
@@ -675,7 +729,7 @@ $('copy').addEventListener('click', async () => {
 		area.select()
 		const copied = document.execCommand('copy')
 		area.remove()
-		say(copied ? 'Copied ' + rows.length + ' ports.' : 'The browser would not allow copying.', !copied)
+		say(copied ? 'Copied ' + ports.length + ' ports.' : 'The browser would not allow copying.', !copied)
 	}
 })
 
@@ -736,7 +790,7 @@ async function load() {
 }
 
 /** Reads and Apply go through the module. This only listens, straight to the router, as Companion can't push to a page. */
-const LIVE_SUBSCRIPTIONS = ['OPEN /MEDIA/NAMES/VIDEO', 'OPEN /EDID', 'OPEN /MEDIA/XP/VIDEO']
+const LIVE_SUBSCRIPTIONS = ['OPEN /MEDIA/NAMES/VIDEO', 'OPEN /EDID', 'OPEN /MEDIA/XP/VIDEO', 'OPEN /MANAGEMENT/UID']
 const HEARTBEAT_MS = 5000
 const RETRY_MS = 5000
 function showLive(on) {
@@ -771,7 +825,7 @@ function startLive() {
 	}
 	live = socket
 	// a * only reaches one level down, whatever the whitepaper says, so each port needs its own
-	const waiting = [...LIVE_SUBSCRIPTIONS, ...rows.map((row) => 'OPEN /MEDIA/PORTS/VIDEO/' + row.port + '/SETTINGS')]
+	const waiting = [...LIVE_SUBSCRIPTIONS, ...rows.filter((row) => row.kind !== 'R').map((row) => 'OPEN /MEDIA/PORTS/VIDEO/' + row.port + '/SETTINGS')]
 	let buffer = ''
 	let heard = Date.now()
 	socket.onopen = () => socket.send(waiting.shift() + '\r\n')
@@ -819,6 +873,8 @@ function liveChange(line) {
 	const hdcp = /^\/MEDIA\/PORTS\/VIDEO\/([IO]\d+)\/SETTINGS$/.exec(path)
 	if (path === '/MEDIA/NAMES/VIDEO') {
 		applyLive(rowOf(property), 'name', value.slice(value.indexOf(';') + 1).replace(/\\(.)/g, '$1'))
+	} else if (path === '/MANAGEMENT/UID' && property === 'DeviceLabel') {
+		applyLive(rowOf('Router'), 'name', value.replace(/\\(.)/g, '$1'))
 	} else if (path === '/EDID' && property === 'EdidStatus') {
 		value.split(';').forEach((id, index) => { if (id) applyLive(rowOf('I' + (index + 1)), 'edid', id) })
 	} else if (hdcp && (property === 'HdcpVersion' || property === 'HdcpMode')) {
@@ -837,6 +893,7 @@ async function catchUp() {
 	if (!response || !response.ok) return
 	const data = await response.json()
 	snapshot = data
+	applyLive(rowOf('Router'), 'name', data.routerName)
 	for (const [kind, list] of [['I', data.inputs], ['O', data.outputs]]) {
 		for (const item of list) {
 			const row = rowOf(kind + item.port)

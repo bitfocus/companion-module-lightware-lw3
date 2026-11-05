@@ -14,6 +14,7 @@ import {
 	parsePortStatus,
 	parsePresetNames,
 	parsePresetSource,
+	portLegend,
 	parseProperty,
 	parseSource,
 } from '../protocol.js'
@@ -144,6 +145,24 @@ describe('parsing what the router sent', () => {
 		expect(lines.push('{00')).toEqual([])
 		expect(lines.push('01\r\nmO /x\r')).toEqual(['{0001'])
 		expect(lines.push('\n}\r\n')).toEqual(['mO /x', '}'])
+	})
+})
+
+describe('the port legend, as in the router web interface', () => {
+	const off = { locked: false, muted: false, connected: false, signal: false }
+	it.each([
+		['not connected', off, '0', 'none'],
+		['a signal to no display', { ...off, signal: true }, 'A', 'none'],
+		['connected with no signal', { ...off, connected: true }, '0', 'connected'],
+		['DVI', { ...off, connected: true, signal: true }, 'A', 'dvi'],
+		['HDMI up to 9G', { ...off, connected: true, signal: true }, 'B', 'hdmi'],
+		['HDMI up to 18G', { ...off, connected: true, signal: true }, 'F', 'hdmi18'],
+	])('reads %s', (_name, status, detail, legend) => {
+		expect(portLegend(status, detail)).toBe(legend)
+	})
+
+	it('reads an unknown port as not connected', () => {
+		expect(portLegend(undefined, undefined)).toBe('none')
 	})
 })
 

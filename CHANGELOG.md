@@ -33,9 +33,10 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(routing):** with auto-route on Stage, clearing a route is staged with the others.
 - **feat(presets):** a router preset's name can be typed into its action while the router is offline.
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
-- **feat(status):** new **Signal on a port** and **Cable connected to a port** feedbacks.
+- **feat(status):** new **Signal on a port**, **Cable connected to a port** and **Port status** feedbacks. Input and output presets show a coloured border with the legend from the router's web interface.
 - **feat(ports):** a page at `/instance/<connection label>/` to edit names, EDID and HDCP for all ports together, with a confirmation listing the changes, all-or-nothing checks, paste from a spreadsheet, Revert and Copy all. It also stores and deletes EDIDs in U slots. EDID changes go out as one command.
 - **feat(ports):** the page updates live from the router's WebSocket, keeps anything being edited, and shows whether it is Live. Names with accents or emoji are sent as the nearest plain characters, and EDID lists can be filtered.
+- **feat(ports):** the page is titled with the router's name, and can change it. New `router_name` variable.
 - **feat(names):** new **Rename a port** action. Names changed elsewhere appear straight away and are logged.
 - **feat(presets):** presets use Companion 5 layered buttons with a plain fallback, a blank styled button, and every button lights up while held.
 - **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses.

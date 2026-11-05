@@ -40,6 +40,9 @@ const newPort = (name: string): Port => ({
  * text. Recalling a preset hasn't been measured yet, so that part is a guess at the same style of reply.
  */
 export class FakeLw3 {
+	routerName = 'MX2-8x8-HDMI20-L'
+	sourceDetail = 'F;F;0;0;0;0;0;0;'
+	destinationDetail = 'F;0;0;0;0;0;0;0;'
 	readonly routes: number[]
 	readonly inputs: Port[]
 	readonly outputs: Port[]
@@ -124,6 +127,13 @@ export class FakeLw3 {
 		}
 	}
 
+	/** A semicolon list of first digits, as the router's web interface reads them */
+	setDetail(direction: 'Source' | 'Destination', value: string): void {
+		if (direction === 'Source') this.sourceDetail = value
+		else this.destinationDetail = value
+		this.#announce(XP, `${direction}PortGuiStatus=${value}`)
+	}
+
 	setSignal(port: string, connected: boolean, signal: boolean): void {
 		const target = this.#target(port)
 		target.connected = connected
@@ -193,6 +203,12 @@ export class FakeLw3 {
 		const set = /^SET \/MEDIA\/NAMES\/VIDEO\.([IO]\d+)=(.*)$/.exec(command)
 		if (set) return this.#setName(set[1], set[2], changes)
 
+		const label = /^SET \/MANAGEMENT\/UID\.DeviceLabel=(.*)$/.exec(command)
+		if (label) {
+			this.routerName = label[1].slice(0, 39)
+			changes.push(['/MANAGEMENT/UID', `DeviceLabel=${escaped(this.routerName)}`])
+			return [`pw /MANAGEMENT/UID.DeviceLabel=${escaped(this.routerName)}`]
+		}
 		const hdcp = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(HdcpVersion|HdcpMode)=(.*)$/.exec(command)
 		if (hdcp) return this.#setHdcp(hdcp[1], hdcp[2], Number(hdcp[3]), hdcp[4], hdcp[5], changes)
 
@@ -201,6 +217,10 @@ export class FakeLw3 {
 		const target = get[1]
 		if (target === '/.ProductName') return ['pr /.ProductName=MX2-8x8-HDMI20-L']
 		if (target === '/MANAGEMENT/UID.FirmwareVersion') return ['pr /MANAGEMENT/UID.FirmwareVersion=1.10.1b4']
+		if (target === '/MANAGEMENT/UID.DeviceLabel') return [`pw /MANAGEMENT/UID.DeviceLabel=${escaped(this.routerName)}`]
+		if (target === `${XP}.SourcePortGuiStatus`) return [`pr ${XP}.SourcePortGuiStatus=${this.sourceDetail}`]
+		if (target === `${XP}.DestinationPortGuiStatus`)
+			return [`pr ${XP}.DestinationPortGuiStatus=${this.destinationDetail}`]
 		if (this.#noRouting && target.startsWith(XP)) return notExists(target)
 		if (target === `${XP}.DestinationConnectionStatus`) {
 			return [`pr ${XP}.DestinationConnectionStatus=${this.#routeList()}`]

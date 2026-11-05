@@ -33,6 +33,7 @@ import {
 	cleanName,
 	isSafePresetName,
 	plainName,
+	unescapeValue,
 	parseEdidProperty,
 	parseEdidStatus,
 	parseList,
@@ -71,6 +72,7 @@ export { UpgradeScripts }
 
 const XP_PATH = '/MEDIA/XP/VIDEO'
 const NAMES_PATH = '/MEDIA/NAMES/VIDEO'
+const UID_PATH = '/MANAGEMENT/UID'
 const PRESET_PATH_PREFIX = '/MEDIA/PRESET/'
 const DEFINITIONS_DEBOUNCE_MS = 100
 /** Saving a preset could announce several changes, which only need reading once */
@@ -185,7 +187,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			outputs.push({ port, name: state.outputName(port), hdcp })
 		}
 		const edids = await this.#readEdidSlots()
-		return edids && { inputs, outputs, edids }
+		return edids && { routerName: state.routerName, inputs, outputs, edids }
 	}
 
 	async #readEdidSlots(): Promise<EdidSlot[] | undefined> {
@@ -226,6 +228,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** Everything is tried, so one refusal doesn't leave the rest unsent. Names first, as they can't disturb a picture. */
 	async #applyPorts(changes: PortChanges): Promise<ChangeErrors> {
 		const errors: ChangeErrors = {}
+		if (changes.routerName !== undefined) {
+			const lines = await this.#client.request(Cmd.setRouterName(changes.routerName), true)
+			const error = lines === undefined ? 'Not connected' : replyError(lines)?.message
+			if (error) errors['Router name'] = error
+			else for (const line of lines ?? []) this.#applyProperty(parseProperty(line))
+		}
 		for (const { port, name } of changes.names) {
 			const error = await this.#rename(port as PortId, name)
 			if (error) errors[`${port} name`] = error
@@ -248,7 +256,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			const error = lines === undefined ? 'Not connected' : replyError(lines)?.message
 			if (error) for (const { port } of changes.edids) errors[`I${port} edid`] = error
 		}
-		const sent = changes.names.length + changes.inputHdcp.length + changes.outputHdcp.length + changes.edids.length
+		const sent =
+			(changes.routerName === undefined ? 0 : 1) +
+			changes.names.length +
+			changes.inputHdcp.length +
+			changes.outputHdcp.length +
+			changes.edids.length
 		const failed = Object.keys(errors).length
 		this.log(failed ? 'warn' : 'info', `Ports page: ${sent} changes sent, ${failed} refused`)
 		return errors
@@ -701,6 +714,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const firmware = await this.#client.request(Cmd.firmware)
 		await this.#client.request(Cmd.subscribeRouting)
 		await this.#client.request(Cmd.subscribeNames)
+		await this.#client.request(Cmd.subscribeRouterName)
 		await this.#client.request(Cmd.subscribePresets)
 		const supported = await this.#readState()
 		if (socket !== this.#socket || product === undefined) return
@@ -737,7 +751,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (replyError(routes)) return false
 		for (const line of routes) this.#applyProperty(parseProperty(line))
 
-		for (const command of [Cmd.destinationStatus, Cmd.sourceStatus, Cmd.names]) {
+		for (const command of [
+			Cmd.destinationStatus,
+			Cmd.sourceStatus,
+			Cmd.destinationDetail,
+			Cmd.sourceDetail,
+			Cmd.routerName,
+			Cmd.names,
+		]) {
 			const lines = await this.#client.request(command)
 			if (lines === undefined) return false
 			for (const line of lines) this.#applyProperty(parseProperty(line))
@@ -791,7 +812,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				this.#applyDestinationStatus(property.value)
 			} else if (property.property === 'SourcePortStatus') {
 				this.#applySourceStatus(property.value)
+			} else if (property.property === 'DestinationPortGuiStatus') {
+				this.state.destinationDetail = parseList(property.value)
+				this.checkFeedbacks('portLegend')
+			} else if (property.property === 'SourcePortGuiStatus') {
+				this.state.sourceDetail = parseList(property.value)
+				this.checkFeedbacks('portLegend')
 			}
+		} else if (property.path === UID_PATH && property.property === 'DeviceLabel') {
+			this.#applyRouterName(unescapeValue(property.value))
 		} else if (property.path === NAMES_PATH) {
 			this.#applyName(property.property, property.value)
 		} else if (property.path.startsWith(PRESET_PATH_PREFIX)) {
@@ -800,6 +829,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				void this.#readPresets()
 			}, PRESET_READ_DEBOUNCE_MS)
 		}
+	}
+
+	#applyRouterName(name: string): void {
+		const { state } = this
+		if (name === state.routerName) return
+		state.routerName = name
+		this.setVariableValues({ router_name: name })
+		if (!this.#reading) this.log('info', `Router name is now "${name}"`)
 	}
 
 	#applyRoutes(value: string): void {
@@ -851,7 +888,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	#applyDestinationStatus(value: string): void {
 		const locks = this.#applyStatus(value, this.state.destinationStatus, 'O')
-		if (locks.changed) this.checkFeedbacks('portSignal', 'portConnected')
+		if (locks.changed) this.checkFeedbacks('portSignal', 'portConnected', 'portLegend')
 		if (locks.lockChanged) {
 			this.setVariableValues(selectionValues(this.state))
 			this.checkFeedbacks('outputLocked')
@@ -868,7 +905,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.setVariableValues({ inputs: this.state.inputCount, ...portNameValues(this.state) })
 		}
 		if (this.#applyStatus(value, this.state.sourceStatus, 'I').changed) {
-			this.checkFeedbacks('portSignal', 'portConnected')
+			this.checkFeedbacks('portSignal', 'portConnected', 'portLegend')
 		}
 	}
 

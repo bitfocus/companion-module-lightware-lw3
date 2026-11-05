@@ -15,6 +15,7 @@ export type FeedbacksSchema = {
 	stagedRoutes: { type: 'boolean'; options: Record<string, never> }
 	portSignal: { type: 'boolean'; options: { port: string } }
 	portConnected: { type: 'boolean'; options: { port: string } }
+	portLegend: { type: 'boolean'; options: { port: string; level: string } }
 	presetLive: { type: 'boolean'; options: { preset: string } }
 	presetStaged: { type: 'boolean'; options: { preset: string } }
 }
@@ -157,6 +158,34 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
 			options: [],
 			callback: () => state.hasStagedRoutes,
+		},
+		portLegend: {
+			type: 'boolean',
+			name: 'Port status, as in the router web interface',
+			description: 'True while the port is in this state. The presets show it as a coloured border.',
+			defaultStyle: { bgcolor: 0x007ee6, color: 0xffffff },
+			options: [
+				{ type: 'dropdown', id: 'port', label: 'Port', default: 'I1', choices: ports },
+				{
+					type: 'dropdown',
+					id: 'level',
+					label: 'State',
+					default: 'hdmi18',
+					choices: [
+						{ id: 'none', label: 'Not connected' },
+						{ id: 'connected', label: 'Connected, no signal' },
+						{ id: 'dvi', label: 'DVI signal' },
+						{ id: 'hdmi', label: 'HDMI signal (max 9G)' },
+						{ id: 'hdmi18', label: 'HDMI signal (max 18G)' },
+					],
+				},
+			],
+			callback: (feedback) => {
+				const input = portNumber(feedback.options.port, 'I')
+				if (input !== undefined) return state.inputLegend(input) === feedback.options.level
+				const output = portNumber(feedback.options.port, 'O')
+				return output !== undefined && state.outputLegend(output) === feedback.options.level
+			},
 		},
 		portSignal: {
 			type: 'boolean',

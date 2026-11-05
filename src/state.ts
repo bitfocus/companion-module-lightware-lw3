@@ -1,3 +1,4 @@
+import { portLegend, type PortLegend } from './protocol.js'
 import type { PortId, PortName, PortStatus, Route } from './protocol.js'
 
 /** Dropdowns need something to offer before a router has reported its size, so buttons can be built offline */
@@ -14,6 +15,9 @@ export class RouterState {
 	readonly names = new Map<PortId, PortName>()
 	readonly sourceStatus = new Map<number, PortStatus>()
 	readonly destinationStatus = new Map<number, PortStatus>()
+	sourceDetail: string[] = []
+	destinationDetail: string[] = []
+	routerName = ''
 	/** Each router preset's input per output, or undefined if they could not be read */
 	presets = new Map<string, (number | undefined)[]>()
 	selectedInput: number | undefined
@@ -55,6 +59,14 @@ export class RouterState {
 
 	get shownOutputs(): number {
 		return this.outputCount || OFFLINE_PORT_COUNT
+	}
+
+	inputLegend(input: number): PortLegend {
+		return portLegend(this.sourceStatus.get(input), this.sourceDetail[input - 1])
+	}
+
+	outputLegend(output: number): PortLegend {
+		return portLegend(this.destinationStatus.get(output), this.destinationDetail[output - 1])
 	}
 
 	inputName(input: number): string {

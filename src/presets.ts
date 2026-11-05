@@ -22,6 +22,17 @@ const SELECTED_DST = 0xffff00
 const SELECTED_SRC = 0x00ff00
 const STAGED = 0xff8000
 const LOCKED = 0xff0000
+/** The router web interface's port legend. Not connected has no border, as that says enough. */
+const LEGEND: [string, number][] = [
+	['connected', 0xfffb00],
+	['dvi', 0xffb300],
+	['hdmi', 0xb3ddff],
+	['hdmi18', 0x007ee6],
+]
+/** In percent of the button. A border stays visible at the angle a Stream Deck's keys are read from. */
+const LEGEND_BORDER_WIDTH = 3
+/** Companion's alpha is in the top byte, and this much of it is clear */
+const TRANSPARENT = 0xff000000
 
 /** Text starts large and shrinks to fit its layer */
 const FONT_SIZE = 100
@@ -83,7 +94,32 @@ interface ButtonSpec {
 	background: number
 	actions: PresetActions
 	feedbacks: PresetFeedback[]
+	/** A port to show the status of, as a coloured border on the layered button */
+	legendPort?: string
 }
+
+const legendBorder = {
+	type: 'box' as const,
+	id: 'legend',
+	name: 'Port status',
+	x: 0,
+	y: 0,
+	width: 100,
+	height: 100,
+	color: TRANSPARENT,
+	borderWidth: LEGEND_BORDER_WIDTH,
+	borderColor: TRANSPARENT,
+	borderPosition: 'inside' as const,
+}
+
+const legendFeedbacks = (port: string | undefined) =>
+	port === undefined
+		? []
+		: LEGEND.map(([level, color]) => ({
+				feedbackId: 'portLegend' as const,
+				options: { port, level },
+				styleOverrides: [{ elementId: 'legend', elementProperty: 'borderColor', override: color }],
+			}))
 
 /** A button in the module style: the image on a coloured background, plus a plain version as a fallback */
 function moduleButton(
@@ -109,18 +145,22 @@ function moduleButton(
 						base64Image: `data:image/png;base64,${BUTTON_PNG_BASE64}`,
 						fillMode: 'fill',
 					},
+					...(spec.legendPort ? [legendBorder] : []),
 					...spec.layers,
 				],
-				feedbacks: spec.feedbacks.map(({ background, shows, hides, fallbackText: _text, ...feedback }) => ({
-					...feedback,
-					styleOverrides: [
-						...(background === undefined
-							? []
-							: [{ elementId: 'box0', elementProperty: 'color', override: background }]),
-						...(shows ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: true })),
-						...(hides ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: false })),
-					],
-				})),
+				feedbacks: [
+					...legendFeedbacks(spec.legendPort),
+					...spec.feedbacks.map(({ background, shows, hides, fallbackText: _text, ...feedback }) => ({
+						...feedback,
+						styleOverrides: [
+							...(background === undefined
+								? []
+								: [{ elementId: 'box0', elementProperty: 'color', override: background }]),
+							...(shows ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: true })),
+							...(hides ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: false })),
+						],
+					})),
+				],
 				steps,
 			},
 			{
@@ -236,6 +276,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			name: `Input ${input}`,
 			background: SOURCE,
 			text: name,
+			legendPort: `I${input}`,
 			actions: [{ actionId: 'selectSource', options }],
 			feedbacks: [
 				{ feedbackId: 'routedInput', options: { input: `I${input}` }, background: SELECTED_SRC },
@@ -263,6 +304,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			name: `Output ${output}`,
 			background: DESTINATION,
 			text: name,
+			legendPort: port,
 			actions: [{ actionId: 'selectDestination', options }],
 			feedbacks,
 		})
@@ -273,6 +315,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		presets[`routed_${output}`] = moduleButton({
 			name: `Output ${output} with its routed input`,
 			background: DESTINATION,
+			legendPort: port,
 			layers: [
 				textLayer('output', 'this output', name, STACK.output),
 				textLayer('cross', 'xpt', 'x', STACK.cross),

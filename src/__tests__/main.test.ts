@@ -432,6 +432,22 @@ describe('the module against the fake router', () => {
 		})
 	})
 
+	it('follows a router name changed elsewhere, and the port legend', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		const legend = (port: string, level: string): boolean =>
+			lastCall(module.setFeedbackDefinitions).portLegend.callback({ options: { port, level } })
+		expect(variable(module, 'router_name')).toBe('MX2-8x8-HDMI20-L')
+		fake.setSignal('I1', true, true)
+		await until(() => legend('I1', 'hdmi18'))
+		fake.setDetail('Source', 'A;0;0;0;0;0;0;0;')
+		await until(() => legend('I1', 'dvi'))
+		fake.setSignal('I1', true, false)
+		await until(() => legend('I1', 'connected'))
+		fake.setSignal('I1', false, false)
+		await until(() => legend('I1', 'none'))
+	})
+
 	it('takes staged routes as one command', async () => {
 		await module.init({ host: '127.0.0.1', port })
 		await connected()
@@ -747,6 +763,30 @@ describe('the module against the fake router', () => {
 			const pagePlainName = new Script(`${code}; plainName`).runInNewContext() as (name: string) => string
 			for (const name of ['Café', 'Müller Straße', 'Søren Æ', '1920×1080', 'Cam – 1', '🎥 Cam 🎥 1', '🎥', ' plain ']) {
 				expect(pagePlainName(name)).toBe(plainName(name))
+			}
+		})
+
+		it('renames the router, and refuses what it would mangle', async () => {
+			await ready()
+			const reply = await send('POST', '/ports', {
+				routerName: 'Rack 3',
+				names: [],
+				inputHdcp: [],
+				outputHdcp: [],
+				edids: [],
+			})
+			expect(reply.json.snapshot.routerName).toBe('Rack 3')
+			expect(variable(module, 'router_name')).toBe('Rack 3')
+			expect(writes()).toContain('SET /MANAGEMENT/UID.DeviceLabel=Rack 3')
+			for (const routerName of ['', 'x'.repeat(40), 'Café']) {
+				const refused = await send('POST', '/ports', {
+					routerName,
+					names: [],
+					inputHdcp: [],
+					outputHdcp: [],
+					edids: [],
+				})
+				expect(refused.status).toBe(400)
 			}
 		})
 

@@ -10,6 +10,7 @@ const XP = '/MEDIA/XP/VIDEO'
 const NAMES = '/MEDIA/NAMES/VIDEO'
 const PRESETS = '/MEDIA/PRESET'
 const PORTS = '/MEDIA/PORTS/VIDEO'
+const UID = '/MANAGEMENT/UID'
 
 export const EDID_BANKS = ['F', 'D', 'U'] as const
 export type EdidBank = (typeof EDID_BANKS)[number]
@@ -17,6 +18,8 @@ export type EdidProperty = 'Validity' | 'MonitorName' | 'PreferredResolution'
 
 /** Longest name the router stores: it keeps the first 62 characters of anything longer */
 export const MAX_NAME_LENGTH = 62
+/** Longest router name it stores, keeping the first 39 characters of anything longer */
+export const MAX_ROUTER_NAME_LENGTH = 39
 
 /** Paths are built from preset names, so a name that could change the command never reaches the router */
 const SAFE_PRESET_NAME = /^[A-Za-z0-9_-]+$/
@@ -38,6 +41,12 @@ export const Cmd = {
 	firmware: 'GET /MANAGEMENT/UID.FirmwareVersion',
 	subscribeRouting: `OPEN ${XP}`,
 	subscribeNames: `OPEN ${NAMES}`,
+	subscribeRouterName: `OPEN ${UID}`,
+	routerName: `GET ${UID}.DeviceLabel`,
+	setRouterName: (name: string): string => `SET ${UID}.DeviceLabel=${name}`,
+	/** Not in the manual. These are what the router's own web interface colours its ports from. */
+	destinationDetail: `GET ${XP}.DestinationPortGuiStatus`,
+	sourceDetail: `GET ${XP}.SourcePortGuiStatus`,
 	/** The `*` includes the nodes below, which is where each preset is. What it announces hasn't been measured. */
 	subscribePresets: `OPEN ${PRESETS}/*`,
 	routes: `GET ${XP}.DestinationConnectionStatus`,
@@ -170,6 +179,23 @@ export function parsePortStatus(entry: string): PortStatus | undefined {
 		connected: (bits & 0b0001) !== 0,
 		signal: (bits & 0b0100) !== 0,
 	}
+}
+
+/** The states in the legend of the router's own web interface */
+export const PORT_LEGENDS = ['none', 'connected', 'dvi', 'hdmi', 'hdmi18'] as const
+export type PortLegend = (typeof PORT_LEGENDS)[number]
+
+/**
+ * Follows the router's web interface. The first hex digit of its GUI status has the signal type in the
+ * low two bits, 3 being HDMI, and the clock in the next two, 3 being up to 18G. Only `0`, `A` and `F`
+ * have been seen, and only `A` with a real DVI source. DisplayPort has its own legend, not done yet.
+ */
+export function portLegend(status: PortStatus | undefined, detail: string | undefined): PortLegend {
+	if (!status?.connected) return 'none'
+	if (!status.signal) return 'connected'
+	const bits = parseInt(detail?.charAt(0) ?? '0', 16)
+	if ((bits & 0b0011) !== 0b0011) return 'dvi'
+	return (bits & 0b1100) === 0b1100 ? 'hdmi18' : 'hdmi'
 }
 
 export interface PortName {
