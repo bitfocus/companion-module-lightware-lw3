@@ -19,12 +19,12 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          # satisfies "engines.node": "^22.20" in package.json
-          node-version: 22.x
+          # satisfies "engines.node": "^26.5" in package.json
+          node-version: 26.x
           package-manager-cache: false
 
       - name: Enable corepack
-        run: corepack enable
+        run: npm install -g corepack && corepack enable
 
       - name: Get the Yarn cache folder
         id: yarn-cache

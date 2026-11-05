@@ -13,7 +13,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 
 ### ⚠ BREAKING CHANGES
 
-- Requires Companion 5 (module API `@companion-module/base` 2.x) and Node 22.20 or newer. Stay on 2.x for Companion 3 or 4.
+- Requires Companion 5 (module API `@companion-module/base` 2.x) and Node 26. Stay on 2.x for Companion 3 or 4.
 - Routers without the MX2 style `/MEDIA/XP/VIDEO` routing, such as those using `/MEDIA/VIDEO/XP`, are no longer supported until they have been measured. The log says so when connecting to one.
 - Router presets are only read from `/MEDIA/PRESET`, no longer from `/PRESETS/AVC`.
 - The **Switch USB Host** and **Run Macro** actions are removed. They used paths this router doesn't have, and couldn't be tested.
@@ -63,6 +63,6 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 
 ### Tested on hardware
 
-In Companion 5.1.1: recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken. The ports page was tried on spare ports: names including `( ) # %`, HDCP, setting an EDID, storing and deleting one, Revert, and paste.
+In Companion 5.1.1, and again after moving to Node 26 on Companion 5.1.2 (routing, TAKE, status borders, the ports page and the built package): recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken. The ports page was tried on spare ports: names including `( ) # %`, HDCP, setting an EDID, storing and deleting one, Revert, and paste.
 
 With a command line test: several routes in one command, unrouting, a route to a locked output, renaming, and the router's announcement of a route changed elsewhere and of cables being unplugged.

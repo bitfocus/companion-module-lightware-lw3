@@ -4,11 +4,11 @@ Controls Lightware matrix routers over LW3 from [Bitfocus Companion](https://bit
 
 ## Tested
 
-Built from measurements of an MX2-8x8-HDMI20-L on firmware 1.10.1b4, and tested with it on Companion 5.1.1. See the "Not tested" section of the [changelog](CHANGELOG.md).
+Built from measurements of an MX2-8x8-HDMI20-L on firmware 1.10.1b4, and tested with it on Companion 5.1.2. See the "Not tested" section of the [changelog](CHANGELOG.md).
 
 ## Developing
 
-This uses Yarn 4 through Corepack, and Node 22.20 or newer.
+This uses Yarn 4 through Corepack, and Node 26.5 or newer.
 
 ```bash
 corepack enable
