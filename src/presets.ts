@@ -277,13 +277,15 @@ export function UpdatePresets(self: ModuleInstance): void {
 		[{ actionId: 'unroute', options: { output: 'O1', useSelected: true } }],
 		CHANGING_TEXT_FONT_SIZE,
 	)
-	control(
-		'lock',
-		'Lock or unlock the selected output',
-		`${VAR}selected_output_lock_text)`,
-		[{ actionId: 'outputLock', options: { output: 1, cmd: 'toggle', useSelected: true } }],
-		CHANGING_TEXT_FONT_SIZE,
-	)
+	// as MUTE: the input or output pressed last, red while it is locked
+	presets.lock = textButton({
+		name: 'Lock or unlock the input or output pressed last',
+		background: CONTROL,
+		text: `${VAR}selected_lock_text)`,
+		fontsize: CHANGING_TEXT_FONT_SIZE,
+		actions: [{ actionId: 'lockPort', options: { port: 'selected', cmd: 'toggle' } }],
+		feedbacks: [{ feedbackId: 'portLocked', options: { port: 'selected' }, background: LOCKED }, controlPushed],
+	})
 
 	presets.save = textButton({
 		name: 'Save: press this, then a router preset to overwrite it with the current routes',
@@ -343,6 +345,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 				{ feedbackId: 'portMuted', options: { port: `I${input}` }, background: MUTED },
 				// with SAVE waiting, an input saves to its front-panel preset, so it flashes like the presets
 				{ feedbackId: 'saveSlotArmed', options: { slot: input }, background: LOCKED },
+				{ feedbackId: 'portLocked', options: { port: `I${input}` }, background: LOCKED },
 				{ feedbackId: PUSHED, options: {}, background: SELECTED_SRC },
 			],
 		})
@@ -360,7 +363,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			{ feedbackId: 'portMuted', options: { port }, background: MUTED },
 			{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
 			{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED },
-			{ feedbackId: 'outputLocked', options: { output: port }, background: LOCKED },
+			{ feedbackId: 'portLocked', options: { port }, background: LOCKED },
 		]
 		outputIds.push(`output_${output}`)
 		presets[`output_${output}`] = textButton({
@@ -401,7 +404,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					hides: ['staged'],
 					fallbackText: `${name}\n${current}\n${next}`,
 				},
-				{ feedbackId: 'outputLocked', options: { output: port }, background: LOCKED },
+				{ feedbackId: 'portLocked', options: { port }, background: LOCKED },
 			],
 		})
 	}

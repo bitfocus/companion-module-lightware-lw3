@@ -28,6 +28,7 @@ export function UpdateVariableDefinitions(
 		selected_output_source: { name: 'Name of what is on the selected output' },
 		selected_output_lock_text: { name: 'Lock button text for the selected output, e.g. LOCK + name' },
 		selected_mute_text: { name: 'Mute button text for the input or output pressed last, e.g. MUTE + name' },
+		selected_lock_text: { name: 'Lock button text for the input or output pressed last, e.g. LOCK + name' },
 		selected_output_hotplug_text: { name: 'Hotplug button text for the selected output, e.g. HOTPLUG + name' },
 	}
 	for (let input = 1; input <= state.shownInputs; input++) {
@@ -76,6 +77,7 @@ export function selectionValues(state: RouterState): VariablesSchema {
 				? '[UN]LOCK\nOUT'
 				: `${state.isLocked(selectedOutput) ? 'UNLOCK' : 'LOCK'}\n${state.outputName(selectedOutput)}`,
 		selected_mute_text: muteText(state),
+		selected_lock_text: lockText(state),
 		selected_output_hotplug_text: `HOTPLUG\n${selectedOutput === undefined ? 'OUT' : state.outputName(selectedOutput)}`,
 		live_preset: state.livePreset ?? 'None',
 	}
@@ -92,4 +94,10 @@ export function slotValues(state: RouterState): VariablesSchema {
 	// an empty one says what SAVE would call the preset it makes there
 	for (const slot of state.slots.keys()) values[slotVar(slot)] = state.slotPreset(slot) ?? `EMPTY\nButton${slot}`
 	return values
+}
+
+function lockText(state: RouterState): string {
+	const port = state.lastSelectedPort
+	if (port === undefined) return '[UN]LOCK\nIN/OUT'
+	return `${state.isPortLocked(port) ? 'UNLOCK' : 'LOCK'}\n${state.portName(port)}`
 }

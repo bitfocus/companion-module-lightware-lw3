@@ -446,12 +446,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.disarmSave()
 		if (input === undefined) return
 		const { state } = this
-		const outputs = Array.from({ length: state.outputCount }, (_, index) => index + 1)
-		const locked = outputs.filter((output) => state.isLocked(output))
-		const free = outputs.filter((output) => !state.isLocked(output) && state.routes.get(output) !== input)
-		if (locked.length > 0) {
-			this.log('warn', `${locked.map((output) => state.outputName(output)).join(', ')} locked, so left as they are`)
+		if (state.isInputLocked(input)) {
+			this.log('warn', `${state.inputName(input)} is locked, so it can't be routed`)
+			return
 		}
+		const outputs = Array.from({ length: state.outputCount }, (_, index) => index + 1)
+		const reasons = outputs.map((output) => state.lockReason({ input, output })).filter((reason) => reason)
+		const free = outputs.filter((output) => !state.lockReason({ input, output }) && state.routes.get(output) !== input)
+		if (reasons.length > 0) this.log('warn', `Left as they are: ${reasons.join('; ')}`)
 		if (free.length === 0) {
 			this.log('info', `Every free output is already on ${state.inputName(input)}`)
 			return
@@ -539,9 +541,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return
 		}
 		const free = routes.filter((route) => {
-			if (!this.state.isLocked(route.output)) return true
+			const reason = this.state.lockReason(route)
+			if (!reason) return true
 			const left = route === pair ? 'its route stays selected' : 'its staged route stays staged'
-			this.log('warn', `${this.state.outputName(route.output)} is locked, so ${left}`)
+			this.log('warn', `${reason}, so ${left}`)
 			return false
 		})
 		if (free.length === 0) return
@@ -788,21 +791,37 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async lockOutput(output: number | undefined, command: LockCommand): Promise<void> {
-		this.disarmSave()
 		if (output === undefined) {
+			this.disarmSave()
 			this.log('warn', 'Select an output before locking')
 			return
 		}
-		const lock = command === 'toggle' ? !this.state.isLocked(output) : command === 'lockDestination'
-		const lines = await this.#client.request(lock ? Cmd.lock(output) : Cmd.unlock(output), true)
+		await this.lockPort(
+			`O${output}`,
+			command === 'toggle' ? 'toggle' : command === 'lockDestination' ? 'lock' : 'unlock',
+		)
+	}
+
+	/** `selected` is the input or output pressed last. A locked input freezes every output it is on. */
+	async lockPort(target: string, command: 'lock' | 'unlock' | 'toggle'): Promise<void> {
+		this.disarmSave()
+		const port =
+			target === 'selected' ? this.state.lastSelectedPort : /^[IO]\d+$/.test(target) ? (target as PortId) : undefined
+		if (port === undefined) {
+			this.log('warn', 'Select an input or an output before locking')
+			return
+		}
+		const name = this.state.portName(port)
+		const lock = command === 'toggle' ? !this.state.isPortLocked(port) : command === 'lock'
+		const lines = await this.#client.request(lock ? Cmd.lockPort(port) : Cmd.unlockPort(port), true)
 		if (lines === undefined) {
-			this.log('warn', `Not connected, so output ${output} wasn't ${lock ? 'locked' : 'unlocked'}`)
+			this.log('warn', `Not connected, so ${name} wasn't ${lock ? 'locked' : 'unlocked'}`)
 			return
 		}
 		const error = replyError(lines)
-		// the router says "Not exists" when an output is already how it was asked to be
+		// the router says "Not exists" when a port is already how it was asked to be
 		if (error && error.code !== ErrorCode.notExists) {
-			this.log('warn', `The router refused to ${lock ? 'lock' : 'unlock'} output ${output}: ${error.message}`)
+			this.log('warn', `The router refused to ${lock ? 'lock' : 'unlock'} ${name}: ${error.message}`)
 		}
 	}
 
@@ -818,8 +837,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const name = this.state.portName(port)
 		const mute = command === 'toggle' ? !this.state.isMuted(port) : command === 'mute'
 		const doing = mute ? 'mute' : 'unmute'
-		// measured: the router refuses a locked output with "Not exists", which says nothing useful
-		if (port.startsWith('O') && this.state.isLocked(Number(port.slice(1)))) {
+		// measured: the router refuses a locked port with "Not exists", which says nothing useful
+		if (this.state.isPortLocked(port)) {
 			this.log('warn', `${name} is locked, so it can't be ${doing}d`)
 			return
 		}
@@ -1004,8 +1023,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (error) {
 			forget()
 			const outputs = routes.map(({ output }) => this.state.outputName(output)).join(', ')
-			if (error.code === ErrorCode.accessDenied) this.log('warn', `Refused: ${outputs} is locked`)
-			else this.log('warn', `The router refused the route to ${outputs}: ${error.code} ${error.message}`)
+			if (error.code === ErrorCode.accessDenied) {
+				const reasons = routes.map((route) => this.state.lockReason(route)).filter((reason) => reason)
+				this.log('warn', `Refused: ${reasons.length ? reasons.join('; ') : `${outputs} is locked`}`)
+			} else this.log('warn', `The router refused the route to ${outputs}: ${error.code} ${error.message}`)
 			return false
 		}
 		return true
@@ -1375,6 +1396,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			'presetStaged',
 			'slotLive',
 			'slotStaged',
+			'portLocked',
 		)
 	}
 
@@ -1382,7 +1404,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const locks = this.#applyStatus(value, this.state.destinationStatus, 'O')
 		if (locks.changed) this.checkFeedbacks('portSignal', 'portConnected', 'portLegend')
 		if (locks.lockChanged || locks.muteChanged) this.setVariableValues(selectionValues(this.state))
-		if (locks.lockChanged) this.checkFeedbacks('outputLocked')
+		if (locks.lockChanged) this.checkFeedbacks('outputLocked', 'portLocked')
 		if (locks.muteChanged) this.checkFeedbacks('portMuted')
 	}
 
@@ -1396,6 +1418,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.setVariableValues({ inputs: this.state.inputCount, ...portNameValues(this.state) })
 		}
 		const status = this.#applyStatus(value, this.state.sourceStatus, 'I')
+		if (status.lockChanged) {
+			// a locked input freezes the outputs it is on, which the router doesn't mark on them
+			this.setVariableValues(selectionValues(this.state))
+			this.checkFeedbacks('portLocked')
+		}
 		if (status.muteChanged) {
 			this.setVariableValues(selectionValues(this.state))
 			this.checkFeedbacks('portMuted')
@@ -1486,6 +1513,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			'outputNext',
 			'portMuted',
 			'hotplugging',
+			'outputLocked',
+			'portLocked',
 		)
 	}
 

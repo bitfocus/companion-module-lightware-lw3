@@ -38,6 +38,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(power):** a **Put the router in standby, or wake it** action, with no preset. Standby is shown wherever it was done from: a connection warning, a log line, a `power` variable, a **Router in standby** feedback and a note on the ports page.
 - **feat(connection):** the connection settings show the model, name, firmware and size of the router connected to. A firmware change is noticed within a few seconds, even when the connection doesn't drop, and the router is read again. While connecting, the settings say so and link to the connection's variables, which are live, as Companion can't update open settings.
 - **feat(presets):** router presets added, renamed or deleted elsewhere appear straight away. The router announces those only on `/MEDIA/PRESET` itself, so the module subscribes there as well as to the presets.
+- **feat(lock):** input locks: **LOCK** acts on the input or output pressed last and turns red while it's locked, a new **Lock or unlock a port** action and **Locked port** feedback, and input buttons turn red when locked. An output showing a locked input shows as locked too, as the router freezes it without saying so. Refused routes name the lock responsible.
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
 - **feat(mute):** new **Mute or unmute a port** action, **Muted port** feedback, and a **MUTE** button that acts on the input or output pressed last. A muted port stays routed and sends black. Mutes made elsewhere are logged.
 - **feat(hotplug):** new **Hotplug an output** action and **HOTPLUG** button, which turn an output's 5V off and on to wake a display, and a **Hotplug an input** action, which makes a source read the EDID again. The ports page has a Hotplug button on every port, with a confirmation that lists the outputs an input hotplug drops. New **Hotplug in progress** feedback.
@@ -81,6 +82,8 @@ In Companion 5.1.1, and again after moving to Node 26 on Companion 5.1.2 (routin
 With a command line test: several routes in one command, unrouting, a route to a locked output, renaming, and the router's announcement of a route changed elsewhere and of cables being unplugged.
 
 Mute and hotplug, with a command line test: muting and unmuting inputs and outputs, several in one command, a mute staying through a route change, a locked output refusing to mute, and `U` for a locked and muted output. Hotplug on Input 1 with a MacBook and on Output 1 with a display, timed from the router's status.
+
+Input locks on the MX2-8X8-HDMI20-AUDIO, with a command line test: locking and unlocking, the routes, unroutes and mutes it refuses, and its announcement.
 
 Router presets, with a command line test: creating, saving, copying, renaming and deleting, the forms each needs, the errors for a name in use and a missing preset, and which subscription hears each announcement. Writing a preset's routes directly, and loading one written that way, and the front-panel preset slots.
 

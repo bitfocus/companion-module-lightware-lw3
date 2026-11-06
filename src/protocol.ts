@@ -104,6 +104,10 @@ export const Cmd = {
 	/** Several routes in one command change together, in a single change message */
 	switch: (routes: Route[]): string => `CALL ${XP}:switch(${routes.map(routeText).join(';')})`,
 	lock: (output: number): string => `CALL ${XP}:lockDestination(O${output})`,
+	/** Measured: a locked input can't be routed anywhere, and freezes every output it is on */
+	lockPort: (port: PortId): string => `CALL ${XP}:${port.startsWith('I') ? 'lockSource' : 'lockDestination'}(${port})`,
+	unlockPort: (port: PortId): string =>
+		`CALL ${XP}:${port.startsWith('I') ? 'unlockSource' : 'unlockDestination'}(${port})`,
 	/** A muted port stays routed and sends black, without dropping the signal */
 	mute: (port: PortId): string => `CALL ${XP}:${port.startsWith('I') ? 'muteSource' : 'muteDestination'}(${port})`,
 	unmute: (port: PortId): string =>

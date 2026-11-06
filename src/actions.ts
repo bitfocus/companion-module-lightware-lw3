@@ -28,6 +28,7 @@ export type ActionsSchema = {
 	setAutoRoute: { options: { mode: string } }
 	outputLock: { options: { output: number; cmd: string; useSelected?: boolean } }
 	mute: { options: { port: string; cmd: string } }
+	lockPort: { options: { port: string; cmd: string } }
 	hotplugOutput: { options: { output: string; useSelected?: boolean; seconds: number } }
 	hotplugInput: { options: { input: string; seconds: number } }
 	rename: { options: { port: string; name: string } }
@@ -230,6 +231,33 @@ export function UpdateActions(self: ModuleInstance): void {
 					action.options.useSelected ? state.selectedOutput : Number(action.options.output),
 					String(action.options.cmd) as LockCommand,
 				),
+		},
+		lockPort: {
+			name: 'Lock or unlock a port',
+			description:
+				"A locked output keeps its route. A locked input can't be routed anywhere else, and every output showing it is frozen too.",
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'selected',
+					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...portChoices(state)],
+				},
+				{
+					type: 'dropdown',
+					id: 'cmd',
+					label: 'Lock',
+					default: 'toggle',
+					choices: [
+						{ id: 'toggle', label: 'Toggle' },
+						{ id: 'lock', label: 'Lock' },
+						{ id: 'unlock', label: 'Unlock' },
+					],
+				},
+			],
+			callback: async (action) =>
+				self.lockPort(String(action.options.port), String(action.options.cmd) as 'lock' | 'unlock' | 'toggle'),
 		},
 		mute: {
 			name: 'Mute or unmute a port',

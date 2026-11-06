@@ -390,14 +390,16 @@ export class FakeLw3 {
 			changes.push([XP, `${property}=${statusList(source ? this.inputs : this.outputs)}`])
 			return ok
 		}
-		const lock = /^(un)?lockDestination$/.exec(method)
+		const lock = /^(un)?lock(Destination|Source)$/.exec(method)
 		if (lock) {
-			const port = this.outputs[Number(args.slice(1)) - 1]
+			const source = lock[2] === 'Source'
+			const port = (source ? this.inputs : this.outputs)[Number(args.slice(1)) - 1]
 			const wanted = !lock[1]
 			// measured: asking for the state it is already in gets this misleading error
 			if (port.locked === wanted) return fail('E002', 'Not exists')
 			port.locked = wanted
-			changes.push([XP, `DestinationPortStatus=${statusList(this.outputs)}`])
+			if (source) changes.push([XP, `SourcePortStatus=${statusList(this.inputs)}`])
+			else changes.push([XP, `DestinationPortStatus=${statusList(this.outputs)}`])
 			return ok
 		}
 		return fail('E002', 'Not exists')
@@ -462,7 +464,13 @@ export class FakeLw3 {
 			if (match[1] !== undefined && input === 0) return fail('E002', 'Not exists')
 			routes.push([input, Number(match[2])])
 		}
-		if (routes.some(([, output]) => this.outputs[output - 1]?.locked)) return fail('E007', 'Access denied')
+		// measured: a locked output, a locked input, or an output showing a locked input, refuses the lot
+		const inputLocked = (input: number): boolean => input > 0 && this.inputs[input - 1]?.locked === true
+		const refused = routes.some(
+			([input, output]) =>
+				this.outputs[output - 1]?.locked || inputLocked(input) || inputLocked(this.routes[output - 1] ?? 0),
+		)
+		if (refused) return fail('E007', 'Access denied')
 		let changed = false
 		for (const [input, output] of routes) {
 			if (this.routes[output - 1] !== input) changed = true

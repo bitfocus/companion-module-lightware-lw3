@@ -20,6 +20,7 @@ export type FeedbacksSchema = {
 	presetLive: { type: 'boolean'; options: { preset: string } }
 	presetStaged: { type: 'boolean'; options: { preset: string } }
 	portMuted: { type: 'boolean'; options: { port: string } }
+	portLocked: { type: 'boolean'; options: { port: string } }
 	saveArmed: { type: 'boolean'; options: Record<string, never> }
 	routerStandby: { type: 'boolean'; options: Record<string, never> }
 	saveSlotArmed: { type: 'boolean'; options: { slot: number } }
@@ -134,9 +135,18 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Locked output',
 			description: 'True if this output is locked',
 			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
-			options: [{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: [{ id: 'selected', label: 'The selected output' }, ...outputs],
+				},
+			],
 			callback: (feedback) => {
-				const output = portNumber(feedback.options.output, 'O')
+				const output =
+					feedback.options.output === 'selected' ? state.selectedOutput : portNumber(feedback.options.output, 'O')
 				return output !== undefined && state.isLocked(output)
 			},
 		},
@@ -273,6 +283,28 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
 			options: [],
 			callback: () => state.saveArmed && state.flashOn,
+		},
+		portLocked: {
+			type: 'boolean',
+			name: 'Locked port',
+			description:
+				'True if this input or output is locked. An output showing a locked input counts too, as the router freezes it, though it marks only the input.',
+			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'selected',
+					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...ports],
+				},
+			],
+			callback: (feedback) => {
+				const port = feedback.options.port === 'selected' ? state.lastSelectedPort : feedback.options.port
+				if (typeof port !== 'string' || !/^[IO]\d+$/.test(port)) return false
+				const number = Number(port.slice(1))
+				return port.startsWith('I') ? state.isInputLocked(number) : state.isFrozen(number)
+			},
 		},
 		portMuted: {
 			type: 'boolean',

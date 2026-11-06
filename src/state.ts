@@ -141,6 +141,32 @@ export class RouterState {
 		return this.destinationStatus.get(output)?.locked === true
 	}
 
+	isInputLocked(input: number): boolean {
+		return this.sourceStatus.get(input)?.locked === true
+	}
+
+	isPortLocked(port: PortId): boolean {
+		const number = Number(port.slice(1))
+		return port.startsWith('I') ? this.isInputLocked(number) : this.isLocked(number)
+	}
+
+	/** Locked itself, or showing a locked input, which the router doesn't mark on the output */
+	isFrozen(output: number): boolean {
+		const input = this.routes.get(output)
+		return this.isLocked(output) || (input !== undefined && input > 0 && this.isInputLocked(input))
+	}
+
+	/** Why the router would refuse this route, if it would */
+	lockReason({ input, output }: Route): string | undefined {
+		if (this.isLocked(output)) return `${this.outputName(output)} is locked`
+		const current = this.routes.get(output)
+		if (current && this.isInputLocked(current)) {
+			return `${this.inputName(current)} is locked, which holds ${this.outputName(output)}`
+		}
+		if (input > 0 && this.isInputLocked(input)) return `${this.inputName(input)} is locked`
+		return undefined
+	}
+
 	isMuted(port: PortId): boolean {
 		const statuses = port.startsWith('I') ? this.sourceStatus : this.destinationStatus
 		return statuses.get(Number(port.slice(1)))?.muted === true

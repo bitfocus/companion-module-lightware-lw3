@@ -63,9 +63,14 @@ A save stores what is routed now. With routes staged, it stores what a take woul
 - **Tip:** for presets you'll keep on a surface, save them to front-panel preset buttons and place those. They keep up when a preset is renamed. A named router preset button doesn't, because to Companion a renamed preset is a new one, so it would need placing again.
 - **Ports page:** the Router presets table shows each preset's routes, and has Save, Rename, Copy and Delete for each, and a box to create one. Each asks first.
 
-### Locked outputs
+### Locks
 
-A route to a locked output is refused by the router, and the log says so. A locked output can't be muted or unmuted either.
+The router can lock inputs as well as outputs.
+
+- **A locked output** keeps its route.
+- **A locked input** can't be routed anywhere new, and every output showing it is frozen too. The router marks only the input, so its web interface makes those outputs look free. The module shows them as locked.
+
+**LOCK** acts on the input or output pressed last, as MUTE does, and turns red while it's locked. Locked inputs and outputs turn red too. The **Lock or unlock a port** action can also name a port, and the older output lock action still works. A route, take or staged preset leaves out whatever a lock would stop, and the log says which lock. A locked port can't be muted or unmuted either. Locks made elsewhere are logged.
 
 ### Mute
 
@@ -137,5 +142,5 @@ The log shows what was found on connecting, reconnects, routes, names, locks and
 - `sourcename_O1`: that input's name, or `None`
 - `stagedname_O1`: the name of the input staged for output 1
 - `live_preset`: a router preset matching the current routes, or `None`
-- `selected_input_label`, `selected_output_label`, `selected_output_source`, `selected_output_lock_text`, `selected_mute_text`, `selected_output_hotplug_text`: for button text
+- `selected_input_label`, `selected_output_label`, `selected_output_source`, `selected_output_lock_text`, `selected_lock_text`, `selected_mute_text`, `selected_output_hotplug_text`: for button text
 - `model`, `router_name`, `firmware`, `inputs`, `outputs`

@@ -191,6 +191,56 @@ describe('the module against the fake router', () => {
 		expect(logged(module, 'warn')).toEqual([])
 	})
 
+	it('lights LOCK red while the selected output is locked', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		const locked = lastCall(module.setFeedbackDefinitions).portLocked
+		module.selectOutput(7)
+		expect(locked.callback({ options: { port: 'selected' } })).toBe(false)
+		await module.lockOutput(7, 'lockDestination')
+		await until(() => module.state.isLocked(7))
+		expect(locked.callback({ options: { port: 'selected' } })).toBe(true)
+		const lock = lastPresets(module).lock.variants[0].feedbacks.map((f: { feedbackId: string }) => f.feedbackId)
+		expect(lock).toEqual(['portLocked', 'internal:buttonPushed'])
+	})
+
+	describe('input locks', () => {
+		it('locks the input pressed last, and shows it and the outputs it holds as locked', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const locked = lastCall(module.setFeedbackDefinitions).portLocked
+			module.selectInput(2)
+			expect(variable(module, 'selected_lock_text')).toBe('LOCK\nInput 2')
+			await module.lockPort('selected', 'toggle')
+			await until(() => module.state.isInputLocked(2))
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:lockSource(I2)'])
+			expect(variable(module, 'selected_lock_text')).toBe('UNLOCK\nInput 2')
+			expect(locked.callback({ options: { port: 'I2' } })).toBe(true)
+			// Input 2 is on outputs 2, 3, 6 and 8, which the router freezes without marking them
+			expect(locked.callback({ options: { port: 'O3' } })).toBe(true)
+			expect(locked.callback({ options: { port: 'O1' } })).toBe(false)
+			expect(logged(module, 'info')).toContain('I2 locked')
+		})
+
+		it('says an input lock is why a route was refused, and leaves those routes out of a take', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await module.lockPort('I2', 'lock')
+			await until(() => module.state.isInputLocked(2))
+			await module.routeNow(2, 1)
+			expect(logged(module, 'warn')).toContain('Refused: Input 2 is locked')
+			module.stage(1, 3)
+			module.stage(1, 5)
+			await module.takeStaged()
+			expect(logged(module, 'warn')).toContain(
+				'Input 2 is locked, which holds Output 3, so its staged route stays staged',
+			)
+			expect(writes()).toContain('CALL /MEDIA/XP/VIDEO:switch(I1:O5)')
+			await module.mutePort('I2', 'mute')
+			expect(logged(module, 'warn')).toContain("Input 2 is locked, so it can't be muted")
+		})
+	})
+
 	it('toggles a lock', async () => {
 		await module.init({ host: '127.0.0.1', port })
 		await connected()
@@ -304,7 +354,8 @@ describe('the module against the fake router', () => {
 			expect(logged(module, 'warn').join()).toContain('Output 8 is still off after its hotplug')
 			fake.silent = false
 			await until(() => fake.output5v[7] === 'true', 15_000)
-			expect(logged(module, 'info')).toContain('Hotplug: Output 8 back on')
+			// the router turns it on a moment before the module hears that it did
+			await until(() => logged(module, 'info').includes('Hotplug: Output 8 back on'))
 		}, 30_000)
 	})
 
@@ -319,7 +370,7 @@ describe('the module against the fake router', () => {
 				'CALL /MEDIA/XP/VIDEO:lockDestination(O8)',
 				'CALL /MEDIA/XP/VIDEO:switch(I2:O1;I2:O4;I2:O5;I2:O7)',
 			])
-			expect(logged(module, 'warn')).toContain('Output 8 locked, so left as they are')
+			expect(logged(module, 'warn')).toContain('Left as they are: Output 8 is locked')
 		})
 
 		it('stages it for TAKE with Off or Stage', async () => {
