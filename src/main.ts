@@ -86,6 +86,8 @@ const FLASH_MS = 500
 const CONNECT_TIMEOUT_MS = 5000
 /** The router has nothing to say while nothing changes, so a quiet connection has to be tested */
 const HEARTBEAT_MS = 3000
+/** How long SAVE waits for a router preset to be pressed */
+const SAVE_ARM_MS = 5000
 
 export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	config!: ModuleConfig // Setup in init()
@@ -110,6 +112,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#connectTimer: ReturnType<typeof setTimeout> | undefined
 	#presetReadTimer: ReturnType<typeof setTimeout> | undefined
 	#flashTimer: ReturnType<typeof setInterval> | undefined
+	#saveArmTimer: ReturnType<typeof setTimeout> | undefined
 	#definitionsTimer: ReturnType<typeof setTimeout> | undefined
 	#choicesDirty = false
 	#portsDirty = false
@@ -135,6 +138,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	async destroy(): Promise<void> {
 		this.#disconnect()
 		this.#stopFlash()
+		this.disarmSave()
 		if (this.#definitionsTimer) clearTimeout(this.#definitionsTimer)
 		this.#definitionsTimer = undefined
 		this.log('debug', 'destroy')
@@ -165,6 +169,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			deleteEdid: async (slot: string) => this.#edidCommand(Cmd.deleteEdid(slot), `Deleted the EDID in ${slot}`),
 			hotplug: async (port: string) => this.hotplug(port as PortId),
 			outputsFedBy: (input: number) => this.outputsFedBy(input),
+			presets: () =>
+				[...this.state.presets].map(([name, routes]) => ({ name, routes, live: this.state.isPresetLive(name) })),
+			// read straight away, so the reply has the result in it
+			savePreset: async (name: string) => this.#afterPresetCommand(await this.savePreset(name)),
+			createPreset: async (name: string) => this.#afterPresetCommand(await this.createPreset(name)),
+			copyPreset: async (from: string, to: string, rename: boolean) =>
+				this.#afterPresetCommand(await this.copyPreset(from, to, rename)),
+			deletePreset: async (name: string) => this.#afterPresetCommand(await this.deletePreset(name)),
 		}
 		return handlePortsRequest(host, request)
 	}
@@ -295,6 +307,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	// ---- actions ----------------------------------------------------------------------------
 
 	selectInput(input: number | undefined): void {
+		this.disarmSave()
 		if (input === undefined) return
 		this.state.selectInput(input)
 		this.#selectionChanged()
@@ -302,6 +315,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	selectOutput(output: number | undefined): void {
+		this.disarmSave()
 		if (output === undefined) return
 		this.state.selectOutput(output)
 		this.#selectionChanged()
@@ -325,6 +339,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	 * anything. Leaving Stage discards what was staged, so that a later take can't send forgotten routes.
 	 */
 	setAutoRouteMode(value: string): void {
+		this.disarmSave()
 		const current = AUTO_ROUTE_ORDER.indexOf(this.autoRouteMode)
 		const mode =
 			value === 'next'
@@ -360,12 +375,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async routeNow(input: number | undefined, output: number | undefined): Promise<void> {
+		this.disarmSave()
 		if (input === undefined || output === undefined) return
 		await this.#switch([{ input, output }])
 	}
 
 	/** In the Stage mode this goes in with the other staged routes */
 	async clearRoute(output: number | undefined): Promise<void> {
+		this.disarmSave()
 		if (output === undefined) {
 			this.log('warn', 'Select an output before clearing its route')
 			return
@@ -402,6 +419,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	stageSelection(): void {
+		this.disarmSave()
 		const { selectedInput, selectedOutput } = this.state
 		if (selectedInput === undefined || selectedOutput === undefined) {
 			this.log('warn', 'Select an input and an output before staging')
@@ -422,6 +440,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** One press for everything lined up: what is staged, and a selected pair that isn't yet */
 	async take(): Promise<void> {
+		this.disarmSave()
 		const { selectedInput: input, selectedOutput: output, pairStaged, staged } = this.state
 		const pair = input !== undefined && output !== undefined && !pairStaged ? { input, output } : undefined
 		if (staged.size > 0) {
@@ -435,6 +454,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async takeStaged(): Promise<void> {
+		this.disarmSave()
 		await this.#sendStaged()
 	}
 
@@ -473,6 +493,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** A pair that was staged goes too, and in Stage so does anything half selected, for a clean start */
 	clearStaged(): void {
+		this.disarmSave()
 		const { state } = this
 		state.staged.clear()
 		state.stagedPreset = undefined
@@ -485,6 +506,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** Follows the auto-route mode: in Stage the preset's routes wait for a take */
 	async recallPreset(name: string): Promise<void> {
+		if (this.state.saveArmed) {
+			this.disarmSave()
+			await this.savePreset(name)
+			return
+		}
 		if (this.autoRouteMode === 'stage') await this.stagePreset(name)
 		else await this.loadPreset(name)
 	}
@@ -546,7 +572,102 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}
 	}
 
+	/** The first press arms it, and the next router preset pressed is overwritten. Anything else disarms it. */
+	armSave(): void {
+		if (this.state.saveArmed) {
+			this.disarmSave()
+			return
+		}
+		this.state.saveArmed = true
+		this.#saveArmTimer = setTimeout(() => this.disarmSave(), SAVE_ARM_MS)
+		this.log('info', 'Save: press a router preset to overwrite it with the current routes')
+		this.#saveArmChanged()
+	}
+
+	disarmSave(): void {
+		if (this.#saveArmTimer) clearTimeout(this.#saveArmTimer)
+		this.#saveArmTimer = undefined
+		if (!this.state.saveArmed) return
+		this.state.saveArmed = false
+		this.#saveArmChanged()
+	}
+
+	#saveArmChanged(): void {
+		this.#stopFlash()
+		this.#syncFlash()
+		this.checkFeedbacks('saveArmed')
+	}
+
+	/** Stores what is routed now. Staged routes aren't routed yet, so they aren't saved. */
+	async savePreset(name: string): Promise<string | undefined> {
+		if (!isSafePresetName(name) || !this.state.presets.has(name)) {
+			this.log('warn', `There is no router preset called "${name}" to overwrite`)
+			return `No router preset called ${name}`
+		}
+		const error = await this.#presetCommand(Cmd.savePreset(name), `overwrite router preset ${name}`)
+		if (error) return error
+		const staged = this.state.stagedRoutes().length
+		this.log(
+			'info',
+			`Router preset ${name} overwritten with the current routes${staged ? `, without the ${staged} staged` : ''}`,
+		)
+		// the router only announces a save that changed something, which a read covers either way
+		this.#presetsChanged()
+		return undefined
+	}
+
+	async createPreset(name: string): Promise<string | undefined> {
+		const clean = String(name).trim()
+		if (!isSafePresetName(clean)) {
+			this.log('warn', `"${clean}" can't be a router preset name: use up to 46 letters, digits, - and _`)
+			return 'Use up to 46 letters, digits, - and _'
+		}
+		if (this.state.presets.has(clean)) {
+			this.log('warn', `Router preset ${clean} already exists, so it wasn't created`)
+			return `${clean} already exists`
+		}
+		const error = await this.#presetCommand(Cmd.createPreset(clean), `create router preset ${clean}`)
+		if (!error) this.log('info', `Router preset ${clean} created from the current routes`)
+		return error
+	}
+
+	/** For the ports page */
+	async copyPreset(from: string, to: string, rename: boolean): Promise<string | undefined> {
+		const target = String(to).trim()
+		if (!isSafePresetName(from) || !this.state.presets.has(from)) return `No router preset called ${from}`
+		if (!isSafePresetName(target)) return 'Use up to 46 letters, digits, - and _'
+		if (this.state.presets.has(target)) return `${target} already exists`
+		const doing = rename ? `rename router preset ${from} to ${target}` : `copy router preset ${from} to ${target}`
+		const error = await this.#presetCommand(
+			rename ? Cmd.renamePreset(from, target) : Cmd.copyPreset(from, target),
+			doing,
+		)
+		if (!error) this.log('info', `Router preset ${from} ${rename ? 'renamed' : 'copied'} to ${target}`)
+		return error
+	}
+
+	async deletePreset(name: string): Promise<string | undefined> {
+		if (!isSafePresetName(name) || !this.state.presets.has(name)) return `No router preset called ${name}`
+		const error = await this.#presetCommand(Cmd.deletePreset(name), `delete router preset ${name}`)
+		if (!error) this.log('info', `Router preset ${name} deleted`)
+		return error
+	}
+
+	async #presetCommand(command: string, doing: string): Promise<string | undefined> {
+		const lines = await this.#client.request(command, true)
+		if (lines === undefined) {
+			this.log('warn', `Not connected, so couldn't ${doing}`)
+			return 'Not connected'
+		}
+		const error = replyError(lines)
+		if (!error) return undefined
+		const why = error.code === ErrorCode.alreadyExists ? 'the name is already in use' : error.message
+		this.log('warn', `The router refused to ${doing}: ${why}`)
+		return why
+	}
+
 	async lockOutput(output: number | undefined, command: LockCommand): Promise<void> {
+		this.disarmSave()
 		if (output === undefined) {
 			this.log('warn', 'Select an output before locking')
 			return
@@ -566,6 +687,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** `selected` is the input or output pressed last */
 	async mutePort(target: string, command: MuteCommand): Promise<void> {
+		this.disarmSave()
 		const port =
 			target === 'selected' ? this.state.lastSelectedPort : /^[IO]\d+$/.test(target) ? (target as PortId) : undefined
 		if (port === undefined) {
@@ -597,6 +719,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	 * back. An input's affects every output it feeds. Returns why it didn't happen, if it didn't.
 	 */
 	async hotplug(port: PortId | undefined, seconds = HOTPLUG_DEFAULT_SECONDS): Promise<string | undefined> {
+		this.disarmSave()
 		if (port === undefined) {
 			this.log('warn', 'Select an output before hotplugging')
 			return 'No port selected'
@@ -836,6 +959,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		await this.#client.request(Cmd.subscribeNames)
 		await this.#client.request(Cmd.subscribeRouterName)
 		await this.#client.request(Cmd.subscribePresets)
+		await this.#client.request(Cmd.subscribePresetList)
 		const supported = await this.#readState()
 		if (socket !== this.#socket || product === undefined) return
 
@@ -921,6 +1045,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#handleLine(line: string): void {
 		const property = parseProperty(line)
 		if (property) this.#applyProperty(property)
+		else if (/^(NEW|DEL) \/MEDIA\/PRESET\//.test(line)) this.#presetsChanged()
 		else this.log('debug', `Ignored from router: ${line}`)
 	}
 
@@ -945,11 +1070,21 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		} else if (property.path === NAMES_PATH) {
 			this.#applyName(property.property, property.value)
 		} else if (property.path.startsWith(PRESET_PATH_PREFIX)) {
-			this.#presetReadTimer ??= setTimeout(() => {
-				this.#presetReadTimer = undefined
-				void this.#readPresets()
-			}, PRESET_READ_DEBOUNCE_MS)
+			this.#presetsChanged()
 		}
+	}
+
+	async #afterPresetCommand(error: string | undefined): Promise<string | undefined> {
+		if (!error) await this.#readPresets()
+		return error
+	}
+
+	/** A rename is a NEW and a DEL together, so one read covers both */
+	#presetsChanged(): void {
+		this.#presetReadTimer ??= setTimeout(() => {
+			this.#presetReadTimer = undefined
+			void this.#readPresets()
+		}, PRESET_READ_DEBOUNCE_MS)
 	}
 
 	#applyRouterName(name: string): void {
@@ -1132,15 +1267,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** The flash only runs while there is something to flash */
 	#syncFlash(): void {
 		const { state } = this
-		if (state.nextInput === undefined && !state.hasStagedRoutes) {
+		if (state.nextInput === undefined && !state.hasStagedRoutes && !state.saveArmed) {
 			if (!this.#flashTimer) return
 			this.#stopFlash()
-			this.checkFeedbacks('sourceSelected', 'stagedWaiting')
+			this.checkFeedbacks('sourceSelected', 'stagedWaiting', 'saveArmed')
 			return
 		}
 		this.#flashTimer ??= setInterval(() => {
 			state.flashOn = !state.flashOn
-			this.checkFeedbacks('sourceSelected', 'stagedWaiting')
+			this.checkFeedbacks('sourceSelected', 'stagedWaiting', 'saveArmed')
 		}, FLASH_MS)
 	}
 

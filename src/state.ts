@@ -33,6 +33,8 @@ export class RouterState {
 	flashOn = true
 	/** Ports part way through a hotplug, with their 5V or HPD off */
 	readonly hotplugging = new Set<PortId>()
+	/** SAVE was pressed: the next router preset pressed is overwritten instead of recalled */
+	saveArmed = false
 
 	selectInput(input: number): void {
 		if (this.pairStaged) this.selectedOutput = undefined

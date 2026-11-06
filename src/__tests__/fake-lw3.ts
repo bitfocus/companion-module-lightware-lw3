@@ -124,13 +124,21 @@ export class FakeLw3 {
 	}
 
 	/** A preset saved elsewhere. Whether a real router announces this hasn't been measured. */
+	/**
+	 * As measured: a new preset is announced as NEW to `OPEN /MEDIA/PRESET` only, and a changed one as a
+	 * CHG to `OPEN /MEDIA/PRESET/*` only, and only if its routes are different
+	 */
 	savePresetFromPanel(name: string, routes: string[]): void {
+		const before = this.presets.get(name)
 		this.presets.set(name, routes)
-		for (const [socket, client] of this.#clients) {
-			if (client.subscribed.has(`${PRESET}/*`)) {
-				socket.write(`CHG ${PRESET}/${name}.VideoDestination=${routes.join(';')};\r\n`)
-			}
-		}
+		if (!before) this.#announceLine(PRESET, `NEW ${PRESET}/${name}`)
+		else if (before.join(';') !== routes.join(';'))
+			this.#announce(`${PRESET}/*`, `${name}.VideoDestination=${routes.join(';')};`, PRESET)
+	}
+
+	deletePresetFromPanel(name: string): void {
+		this.presets.delete(name)
+		this.#announceLine(PRESET, `DEL ${PRESET}/${name}`)
 	}
 
 	/** A semicolon list of first digits, as the router's web interface reads them */
@@ -198,9 +206,14 @@ export class FakeLw3 {
 		socket.write(`{${id}\r\n${reply.map((text) => `${text}\r\n`).join('')}}\r\n`)
 	}
 
-	#announce(path: string, property: string): void {
+	/** `path` is what a client opened, and `node` what the change message names, if different */
+	#announce(path: string, property: string, node = path): void {
+		this.#announceLine(path, `CHG ${node}${node === PRESET ? '/' : '.'}${property}`)
+	}
+
+	#announceLine(path: string, line: string): void {
 		for (const [socket, client] of this.#clients) {
-			if (client.subscribed.has(path)) socket.write(`CHG ${path}.${property}\r\n`)
+			if (client.subscribed.has(path)) socket.write(`${line}\r\n`)
 		}
 	}
 
@@ -288,7 +301,14 @@ export class FakeLw3 {
 
 		if (path === '/EDID') return this.#callEdid(method, args, ok, fail, changes)
 
+		if (path === PRESET) return this.#callPresets(method, args, fail)
 		const preset = /^\/MEDIA\/PRESET\/(.+)$/.exec(path)
+		if (preset && method === 'save') {
+			const stored = this.presets.get(preset[1])
+			if (!stored) return fail('E002', 'Not exists')
+			this.savePresetFromPanel(preset[1], this.#presetRoutes())
+			return [`mO ${path}:${method}=Ok`]
+		}
 		if (preset && method === 'load') {
 			const stored = this.presets.get(preset[1])
 			if (!stored) return fail('E002', 'Not exists')
@@ -324,6 +344,38 @@ export class FakeLw3 {
 			port.locked = wanted
 			changes.push([XP, `DestinationPortStatus=${statusList(this.outputs)}`])
 			return ok
+		}
+		return fail('E002', 'Not exists')
+	}
+
+	/** The routes as a preset holds them, such as uI1 */
+	#presetRoutes(): string[] {
+		return this.routes.map((input) => (input === 0 ? 'u0' : `uI${input}`))
+	}
+
+	/** As measured: the manual's comma form, a new preset holding what is routed now, and NEW and DEL */
+	#callPresets(method: string, args: string, fail: (code: string, text: string) => string[]): string[] {
+		const parts = args.split(',')
+		const done = [`mO ${PRESET}:${method}=`]
+		if (method === 'create') {
+			if (parts.length !== 2 || parts[1] !== 'VIDEO') return fail('E004', 'Invalid value')
+			if (this.presets.has(parts[0])) return fail('E003', 'Already exists')
+			this.savePresetFromPanel(parts[0], this.#presetRoutes())
+			return done
+		}
+		if (method === 'delete') {
+			if (!this.presets.has(args)) return fail('E002', 'Not exists')
+			this.deletePresetFromPanel(args)
+			return done
+		}
+		if (method === 'copy' || method === 'rename') {
+			const [from, to] = parts
+			const stored = this.presets.get(from)
+			if (parts.length !== 2 || !stored) return fail('E002', 'Not exists')
+			if (this.presets.has(to)) return fail('E003', 'Already exists')
+			this.savePresetFromPanel(to, [...stored])
+			if (method === 'rename') this.deletePresetFromPanel(from)
+			return done
 		}
 		return fail('E002', 'Not exists')
 	}

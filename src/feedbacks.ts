@@ -20,6 +20,7 @@ export type FeedbacksSchema = {
 	presetLive: { type: 'boolean'; options: { preset: string } }
 	presetStaged: { type: 'boolean'; options: { preset: string } }
 	portMuted: { type: 'boolean'; options: { port: string } }
+	saveArmed: { type: 'boolean'; options: Record<string, never> }
 	hotplugging: { type: 'boolean'; options: { port: string } }
 }
 
@@ -205,6 +206,14 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0x008000, color: 0xffffff },
 			options: [{ type: 'dropdown', id: 'port', label: 'Port', default: 'O1', choices: ports }],
 			callback: (feedback) => portStatus(feedback.options.port)?.connected === true,
+		},
+		saveArmed: {
+			type: 'boolean',
+			name: 'Save waiting for a router preset',
+			description: 'Flashes after SAVE is pressed, until a router preset is pressed or it is cancelled',
+			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
+			options: [],
+			callback: () => state.saveArmed && state.flashOn,
 		},
 		portMuted: {
 			type: 'boolean',

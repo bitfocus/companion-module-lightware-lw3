@@ -25,7 +25,8 @@ export const HOTPLUG_DEFAULT_SECONDS = 2
 export const HOTPLUG_MAX_SECONDS = 10
 
 /** Paths are built from preset names, so a name that could change the command never reaches the router */
-const SAFE_PRESET_NAME = /^[A-Za-z0-9_-]+$/
+/** The router took 46 characters, and spaces and dots too, but those would end up inside commands */
+const SAFE_PRESET_NAME = /^[A-Za-z0-9_-]{1,46}$/
 
 export const isSafePresetName = (name: string): boolean => SAFE_PRESET_NAME.test(name)
 
@@ -51,7 +52,10 @@ export const Cmd = {
 	destinationDetail: `GET ${XP}.DestinationPortGuiStatus`,
 	sourceDetail: `GET ${XP}.SourcePortGuiStatus`,
 	/** The `*` includes the nodes below, which is where each preset is. What it announces hasn't been measured. */
+	/** Changes to the presets that exist. Measured: a preset being added or deleted isn't announced here. */
 	subscribePresets: `OPEN ${PRESETS}/*`,
+	/** Presets being added, renamed or deleted, announced as NEW and DEL lines */
+	subscribePresetList: `OPEN ${PRESETS}`,
 	routes: `GET ${XP}.DestinationConnectionStatus`,
 	/** Some models and firmwares may only have this older name. Not seen on a real router yet. */
 	routesOlder: `GET ${XP}.DestinationConnectionList`,
@@ -74,6 +78,13 @@ export const Cmd = {
 	deleteEdid: (slot: string): string => `CALL /EDID:delete(${slot})`,
 	presetRoutes: (name: string): string => `GET ${PRESETS}/${name}.VideoDestination`,
 	loadPreset: (name: string): string => `CALL ${PRESETS}/${name}:load()`,
+	/** Measured: the brackets are needed, and it stores what is routed now */
+	savePreset: (name: string): string => `CALL ${PRESETS}/${name}:save()`,
+	/** Measured: these take the manual's comma form, unlike switch. A new preset holds what is routed now. */
+	createPreset: (name: string): string => `CALL ${PRESETS}:create(${name},VIDEO)`,
+	copyPreset: (from: string, to: string): string => `CALL ${PRESETS}:copy(${from},${to})`,
+	renamePreset: (from: string, to: string): string => `CALL ${PRESETS}:rename(${from},${to})`,
+	deletePreset: (name: string): string => `CALL ${PRESETS}:delete(${name})`,
 	/** Several routes in one command change together, in a single change message */
 	switch: (routes: Route[]): string => `CALL ${XP}:switch(${routes.map(routeText).join(';')})`,
 	lock: (output: number): string => `CALL ${XP}:lockDestination(O${output})`,
@@ -100,6 +111,8 @@ export const ErrorCode = {
 	invalidValue: 'E004',
 	/** A switch to a locked output */
 	accessDenied: 'E007',
+	/** Creating a router preset with a name already in use */
+	alreadyExists: 'E003',
 } as const
 
 /** Splits a byte stream into the router's CRLF terminated lines */

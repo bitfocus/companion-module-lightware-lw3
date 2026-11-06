@@ -32,6 +32,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(presets):** with auto-route on Stage, a router preset's routes are staged instead of loaded, so what it would change shows before anything changes. Only the routes that would change are sent when taken. New **Router preset is staged** feedback.
 - **feat(routing):** with auto-route on Stage, clearing a route is staged with the others.
 - **feat(presets):** a router preset's name can be typed into its action while the router is offline.
+- **feat(presets):** save router presets: a **SAVE PRESET** button that overwrites the next router preset pressed, **Overwrite a router preset** and **Create a router preset** actions, and a Router presets table on the ports page to save, rename, copy, delete and create them.
+- **feat(presets):** router presets added, renamed or deleted elsewhere appear straight away. The router announces those only on `/MEDIA/PRESET` itself, so the module subscribes there as well as to the presets.
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
 - **feat(mute):** new **Mute or unmute a port** action, **Muted port** feedback, and a **MUTE** button that acts on the input or output pressed last. A muted port stays routed and sends black. Mutes made elsewhere are logged.
 - **feat(hotplug):** new **Hotplug an output** action and **HOTPLUG** button, which turn an output's 5V off and on to wake a display, and a **Hotplug an input** action, which makes a source read the EDID again. The ports page has a Hotplug button on every port, with a confirmation that lists the outputs an input hotplug drops. New **Hotplug in progress** feedback.
@@ -57,7 +59,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 
 - Soft reset.
 - How many routes one command can hold, which matters for a staged preset on a big router.
-- Whether the router announces a preset being saved, added or removed, and whether it announces a lock changed elsewhere.
+- Whether the router announces a lock changed elsewhere.
+- How many router presets the router can hold, and the longest name it allows. 46 characters was accepted.
 - Any router other than the MX2-8x8-HDMI20-L, any other firmware, and any other version of Companion.
 - Upgrading a v2 configuration.
 - How many WebSockets and subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
@@ -72,3 +75,5 @@ In Companion 5.1.1, and again after moving to Node 26 on Companion 5.1.2 (routin
 With a command line test: several routes in one command, unrouting, a route to a locked output, renaming, and the router's announcement of a route changed elsewhere and of cables being unplugged.
 
 Mute and hotplug, with a command line test: muting and unmuting inputs and outputs, several in one command, a mute staying through a route change, a locked output refusing to mute, and `U` for a locked and muted output. Hotplug on Input 1 with a MacBook and on Output 1 with a display, timed from the router's status.
+
+Router presets, with a command line test: creating, saving, copying, renaming and deleting, the forms each needs, the errors for a name in use and a missing preset, and which subscription hears each announcement.

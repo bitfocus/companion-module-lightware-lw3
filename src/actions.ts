@@ -11,6 +11,9 @@ export type ActionsSchema = {
 	xpt: { options: { input: string; output: string } }
 	unroute: { options: { output: string; useSelected?: boolean } }
 	preset: { options: { preset: string } }
+	savePreset: { options: { preset: string } }
+	createPreset: { options: { name: string } }
+	armSave: { options: NoOptions }
 	selectSource: { options: { port: string } }
 	selectDestination: { options: { port: string } }
 	take: { options: NoOptions }
@@ -83,6 +86,39 @@ export function UpdateActions(self: ModuleInstance): void {
 				},
 			],
 			callback: async (action) => self.recallPreset(String(action.options.preset)),
+		},
+		savePreset: {
+			name: 'Overwrite a router preset with the current routes',
+			description:
+				'Its old routes are lost. Only what is routed now is saved: take any staged routes first. There is no one-press preset for this on purpose.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'preset',
+					label: 'Router preset',
+					default: presets[0]?.id ?? '',
+					choices: presets,
+					allowCustom: true,
+				},
+			],
+			callback: async (action) => {
+				await self.savePreset(String(action.options.preset))
+			},
+		},
+		createPreset: {
+			name: 'Create a router preset from the current routes',
+			description: 'Up to 46 letters, digits, - and _. Nothing happens if the name is already in use.',
+			options: [{ type: 'textinput', id: 'name', label: 'Name', default: 'NEW-001' }],
+			callback: async (action) => {
+				await self.createPreset(String(action.options.name))
+			},
+		},
+		armSave: {
+			name: 'Save: the next router preset pressed is overwritten',
+			description:
+				'Press it, then press a router preset button within 5 seconds to overwrite that preset with the current routes. Pressing it again, or anything else, cancels.',
+			options: [],
+			callback: () => self.armSave(),
 		},
 		selectSource: {
 			name: 'Select an input',

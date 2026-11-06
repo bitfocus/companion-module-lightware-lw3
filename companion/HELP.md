@@ -44,6 +44,17 @@ A staged preset only changes routes. Anything else a preset holds is only applie
 
 If the router is offline when you build a button, type the preset's name into the action.
 
+Presets added, renamed or deleted elsewhere, such as on the router's web page, appear straight away.
+
+#### Saving router presets
+
+A save stores what is routed now. Staged routes aren't routed yet, so take them first.
+
+- **SAVE PRESET button:** press it, and it and every router preset button flash red. Press a router preset within 5 seconds to overwrite it. Pressing SAVE again, or anything else, cancels.
+- **Overwrite a router preset** action: for a button of your own. There is no one-press preset for it, as the old routes are lost.
+- **Create a router preset** action: makes a new preset from the current routes. Names can use up to 46 letters, digits, `-` and `_`. The router allows more, but those would end up inside commands.
+- **Ports page:** the Router presets table shows each preset's routes, and has Save, Rename, Copy and Delete for each, and a box to create one. Each asks first.
+
 ### Locked outputs
 
 A route to a locked output is refused by the router, and the log says so. A locked output can't be muted or unmuted either.

@@ -53,6 +53,19 @@ export interface PortsHost {
 	hotplug(port: string): Promise<string | undefined>
 	/** Names of the outputs an input feeds, which a hotplug on it drops too */
 	outputsFedBy(input: number): string[]
+	/** As the module knows them, which follows the router's announcements */
+	presets(): PresetRow[]
+	savePreset(name: string): Promise<string | undefined>
+	createPreset(name: string): Promise<string | undefined>
+	copyPreset(from: string, to: string, rename: boolean): Promise<string | undefined>
+	deletePreset(name: string): Promise<string | undefined>
+}
+
+export interface PresetRow {
+	name: string
+	/** The input for each output, 0 for none */
+	routes: (number | undefined)[]
+	live: boolean
 }
 
 export const INPUT_HDCP = ['0', '2', '3']
@@ -179,6 +192,24 @@ async function remove(host: PortsHost, request: CompanionHTTPRequest): Promise<C
 	return error ? json(502, { error }) : json(200, { snapshot: await host.readPorts() })
 }
 
+async function presetAction(
+	host: PortsHost,
+	action: string,
+	request: CompanionHTTPRequest,
+): Promise<CompanionHTTPResponse> {
+	const { name, to } = parseBody(request) ?? {}
+	if (typeof name !== 'string') return json(400, { error: 'The request needs a name' })
+	let error: string | undefined
+	if (action === 'save') error = await host.savePreset(name)
+	else if (action === 'create') error = await host.createPreset(name)
+	else if (action === 'delete') error = await host.deletePreset(name)
+	else if (action === 'copy' || action === 'rename') {
+		if (typeof to !== 'string') return json(400, { error: 'The request needs a new name' })
+		error = await host.copyPreset(name, to, action === 'rename')
+	} else return json(404, { error: 'No such preset action' })
+	return error ? json(502, { error }) : json(200, { presets: host.presets() })
+}
+
 /** The table of ports, served by Companion at /instance/<connection label>/ */
 export async function handlePortsRequest(
 	host: PortsHost,
@@ -194,6 +225,7 @@ export async function handlePortsRequest(
 			? json(200, { ...snapshot, router: host.routerAddress })
 			: json(503, { error: 'Not connected to the router' })
 	}
+	if (path === '/presets' && request.method === 'GET') return json(200, { presets: host.presets() })
 	if (path === '/feeds' && request.method === 'GET') {
 		const input = Number(request.query.input)
 		if (!Number.isInteger(input) || input < 1) return json(400, { error: 'The request needs an input number' })
@@ -210,6 +242,7 @@ export async function handlePortsRequest(
 	if (path === '/ports' && request.method === 'POST') return applyChanges(host, request)
 	if (path === '/edid/store' && request.method === 'POST') return store(host, request)
 	if (path === '/edid/delete' && request.method === 'POST') return remove(host, request)
+	if (path.startsWith('/preset/') && request.method === 'POST') return presetAction(host, path.slice(8), request)
 	if (path === '/hotplug' && request.method === 'POST') {
 		const { port } = parseBody(request) ?? {}
 		if (typeof port !== 'string' || !/^[IO]\d+$/.test(port)) return json(400, { error: 'The request needs a port' })
@@ -244,6 +277,9 @@ th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--line
 th.port { width: 3.5em; font-weight: 500; }
 th:nth-child(2) { width: 28%; }
 td.status { width: 22%; }
+td.buttons { white-space: nowrap; }
+#presets th.port { white-space: nowrap; }
+td.buttons button { margin: 2px; }
 input, select { font: inherit; width: 100%; padding: 2px 4px; max-width: 100%; }
 tr.changed { background: var(--changed); }
 select.dynamic { background: var(--dynamic); }
@@ -296,6 +332,14 @@ dialog .warn { color: var(--bad); }
 <th>Port</th><th>Name</th>
 <th>HDCP<br><select id="all-output-hdcp" aria-label="Set every output's HDCP"></select></th>
 <th></th><th></th></tr></thead><tbody></tbody></table></div>
+<h2>Router presets</h2>
+<div class="scroll"><table id="presets"><thead><tr>
+<th>Name</th><th>Routes (output: input)</th><th></th></tr></thead><tbody></tbody></table></div>
+<div class="store">
+<input id="new-preset" placeholder="New preset name" aria-label="New preset name" maxlength="46">
+<button id="create-preset">Create from current routes</button>
+</div>
+<p class="note">Save and Create store what is routed now, not what is staged. Names can use letters, digits, - and _.</p>
 <h2>Stored EDIDs</h2>
 <div class="store">
 <select id="store-from" aria-label="EDID to store"></select>
@@ -771,6 +815,72 @@ async function slotAction(path, body, title, lines, warning) {
 		say('Done.')
 	}
 }
+// ---- router presets ----
+const PRESET_NAME = /^[A-Za-z0-9_-]{1,46}$/
+let presetTimer
+/** The module reads a preset once the router announces it, so give it a moment first */
+function presetsSoon() {
+	clearTimeout(presetTimer)
+	presetTimer = setTimeout(loadPresets, 700)
+}
+async function loadPresets() {
+	const data = await fetch(base + 'presets').then((response) => response.json()).catch(() => undefined)
+	if (data && data.presets) renderPresets(data.presets)
+}
+function renderPresets(presets) {
+	const body = $('presets').tBodies[0]
+	body.replaceChildren(...presets.map((preset) => {
+		const tr = document.createElement('tr')
+		const name = document.createElement('th')
+		name.className = 'port'
+		name.textContent = preset.name
+		const routes = document.createElement('td')
+		routes.className = 'note'
+		routes.textContent = preset.routes.map((input, index) => (index + 1) + ': ' + (input ? 'I' + input : '-')).join('  ') + (preset.live ? '  (live now)' : '')
+		const buttons = document.createElement('td')
+		buttons.className = 'buttons'
+		for (const [label, run] of [['Save', savePreset], ['Rename', (n) => copyPreset(n, true)], ['Copy', (n) => copyPreset(n, false)], ['Delete', deletePreset]]) {
+			const button = document.createElement('button')
+			button.textContent = label
+			button.setAttribute('aria-label', label + ' ' + preset.name)
+			button.addEventListener('click', () => run(preset.name))
+			buttons.append(button)
+		}
+		tr.append(name, routes, buttons)
+		return tr
+	}))
+}
+async function presetPost(action, body, done) {
+	const result = await post('preset/' + action, body).catch(() => undefined)
+	if (!result || !result.ok) {
+		say('The router did not do that: ' + ((result && result.reply.error) || 'cannot reach Companion'), true)
+		return false
+	}
+	renderPresets(result.reply.presets)
+	say(done)
+	return true
+}
+async function savePreset(name) {
+	if (!(await ask('Overwrite ' + name + '?', ['With what is routed now'], 'Its old routes are lost. Anything staged is not saved.'))) return
+	await presetPost('save', { name }, name + ' saved.')
+}
+async function copyPreset(name, rename) {
+	const to = (prompt((rename ? 'Rename ' : 'Copy ') + name + ' to:', name + (rename ? '' : '-COPY')) || '').trim()
+	if (!to || to === name) return
+	if (!PRESET_NAME.test(to)) return say('A preset name can use up to 46 letters, digits, - and _.', true)
+	await presetPost(rename ? 'rename' : 'copy', { name, to }, name + (rename ? ' renamed to ' : ' copied to ') + to + '.')
+}
+async function deletePreset(name) {
+	if (!(await ask('Delete ' + name + '?', [name], 'Buttons that recall it will stop working.'))) return
+	await presetPost('delete', { name }, name + ' deleted.')
+}
+$('create-preset').addEventListener('click', async () => {
+	const name = $('new-preset').value.trim()
+	if (!PRESET_NAME.test(name)) return say('A preset name can use up to 46 letters, digits, - and _.', true)
+	if (!(await ask('Create ' + name + '?', ['From what is routed now'], ''))) return
+	if (await presetPost('create', { name }, name + ' created.')) $('new-preset').value = ''
+})
+
 /** Asks first, naming the port, as a mistaken tap drops a picture */
 async function hotplugPort(row, button) {
 	const label = row.port + ' (' + row.original.name + ')'
@@ -829,11 +939,13 @@ async function load() {
 	render(data)
 	for (const row of rows) setStatus(row, '')
 	say('')
+	loadPresets()
 	if (!live) startLive()
 }
 
 /** Reads and Apply go through the module. This only listens, straight to the router, as Companion can't push to a page. */
-const LIVE_SUBSCRIPTIONS = ['OPEN /MEDIA/NAMES/VIDEO', 'OPEN /EDID', 'OPEN /MEDIA/XP/VIDEO', 'OPEN /MANAGEMENT/UID']
+// presets being added or deleted are only announced on /MEDIA/PRESET, and changes to one only on /MEDIA/PRESET/*
+const LIVE_SUBSCRIPTIONS = ['OPEN /MEDIA/NAMES/VIDEO', 'OPEN /EDID', 'OPEN /MEDIA/XP/VIDEO', 'OPEN /MANAGEMENT/UID', 'OPEN /MEDIA/PRESET', 'OPEN /MEDIA/PRESET/*']
 const HEARTBEAT_MS = 5000
 const RETRY_MS = 5000
 function showLive(on) {
@@ -879,6 +991,7 @@ function startLive() {
 		const lines = buffer.split('\r\n')
 		buffer = lines.pop()
 		for (const line of lines) {
+			if (/^(NEW|DEL|CHG) \/MEDIA\/PRESET\//.test(line) || line.startsWith('CHG /MEDIA/XP/VIDEO.DestinationConnectionStatus')) presetsSoon()
 			if (line.startsWith('CHG ')) liveChange(line)
 			else if (line.startsWith('o- ')) {
 				if (waiting.length) socket.send(waiting.shift() + '\r\n')
@@ -950,6 +1063,7 @@ async function catchUp() {
 		}
 	}
 	fillEdidLists()
+	loadPresets()
 }
 document.addEventListener('visibilitychange', () => {
 	if (document.hidden) {

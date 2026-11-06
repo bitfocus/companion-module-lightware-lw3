@@ -812,6 +812,101 @@ describe('the module against the fake router', () => {
 		expect(logged(module, 'info')).toContain('Router presets now: SHOW-A, SHOW-B, SHOW-C')
 	})
 
+	describe('saving router presets', () => {
+		it('overwrites the preset pressed after SAVE, instead of recalling it', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			module.armSave()
+			expect(module.state.saveArmed).toBe(true)
+			await module.recallPreset('SHOW-B')
+			expect(module.state.saveArmed).toBe(false)
+			expect(writes()).toEqual(['CALL /MEDIA/PRESET/SHOW-B:save()'])
+			expect(fake.presets.get('SHOW-B')).toEqual(['uI1', 'uI2', 'uI2', 'uI1', 'u0', 'uI2', 'u0', 'uI2'])
+			await until(() => module.state.isPresetLive('SHOW-B'))
+			expect(logged(module, 'info')).toContain('Router preset SHOW-B overwritten with the current routes')
+		})
+
+		it('cancels SAVE on a second press or any other button, and on its own after 5 s', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			module.armSave()
+			module.armSave()
+			expect(module.state.saveArmed).toBe(false)
+			module.armSave()
+			module.selectInput(3)
+			expect(module.state.saveArmed).toBe(false)
+			vi.useFakeTimers()
+			try {
+				module.armSave()
+				vi.advanceTimersByTime(5000)
+				expect(module.state.saveArmed).toBe(false)
+			} finally {
+				vi.useRealTimers()
+			}
+			await module.recallPreset('SHOW-B')
+			expect(writes()).toEqual(['CALL /MEDIA/PRESET/SHOW-B:load()'])
+		})
+
+		it('creates a preset from the current routes, refusing a name in use or one unsafe in a command', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			expect(await module.createPreset('SHOW-A')).toBe('SHOW-A already exists')
+			expect(await module.createPreset('a b')).toBe('Use up to 46 letters, digits, - and _')
+			expect(await module.createPreset(' SHOW-C ')).toBeUndefined()
+			expect(writes()).toEqual(['CALL /MEDIA/PRESET:create(SHOW-C,VIDEO)'])
+			await until(() => module.state.presets.has('SHOW-C'))
+		})
+
+		it('saves, renames, copies and deletes from the page, answering with the presets as they are', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const post = async (path: string, body: unknown) => {
+				const response = await module.handleHttpRequest({
+					method: 'POST',
+					path,
+					baseUrl: '',
+					originalUrl: path,
+					hostname: 'companion.local',
+					ip: '127.0.0.1',
+					query: {},
+					headers: { host: 'companion.local:8000' },
+					body: JSON.stringify(body),
+				})
+				return { status: response.status, json: JSON.parse(response.body ?? '{}') as Record<string, any> }
+			}
+			const names = (reply: { json: Record<string, any> }) =>
+				(reply.json.presets as { name: string }[]).map(({ name }) => name)
+			expect(names(await post('/preset/rename', { name: 'SHOW-B', to: 'SHOW-X' }))).toEqual(['SHOW-A', 'SHOW-X'])
+			expect(names(await post('/preset/copy', { name: 'SHOW-A', to: 'SHOW-Y' }))).toEqual([
+				'SHOW-A',
+				'SHOW-X',
+				'SHOW-Y',
+			])
+			expect(names(await post('/preset/delete', { name: 'SHOW-Y' }))).toEqual(['SHOW-A', 'SHOW-X'])
+			expect((await post('/preset/save', { name: 'SHOW-A' })).status).toBe(200)
+			expect(await post('/preset/delete', { name: 'NOPE' })).toEqual({
+				status: 502,
+				json: { error: 'No router preset called NOPE' },
+			})
+			expect(writes()).toEqual([
+				'CALL /MEDIA/PRESET:rename(SHOW-B,SHOW-X)',
+				'CALL /MEDIA/PRESET:copy(SHOW-A,SHOW-Y)',
+				'CALL /MEDIA/PRESET:delete(SHOW-Y)',
+				'CALL /MEDIA/PRESET/SHOW-A:save()',
+			])
+		})
+	})
+
+	it('drops a preset deleted elsewhere, and its button', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		expect(fake.received).toContain('OPEN /MEDIA/PRESET')
+		fake.deletePresetFromPanel('SHOW-B')
+		await until(() => !module.state.presets.has('SHOW-B'))
+		await until(() => !Object.keys(lastPresets(module)).includes('preset_SHOW-B'))
+		expect(logged(module, 'info')).toContain('Router presets now: SHOW-A')
+	})
+
 	it('tests a quiet connection, and reconnects when the router stops answering', async () => {
 		await module.init({ host: '127.0.0.1', port })
 		await connected()
@@ -854,7 +949,7 @@ describe('the module against the fake router', () => {
 		const presets = lastPresets(module)
 		const feedbackIds = Object.keys(lastCall(module.setFeedbackDefinitions))
 		const actionIds = Object.keys(lastCall(module.setActionDefinitions))
-		expect(Object.keys(presets)).toHaveLength(8 + 2 + 8 * 2 + 8)
+		expect(Object.keys(presets)).toHaveLength(9 + 2 + 8 * 2 + 8)
 		for (const [id, preset] of Object.entries(presets)) {
 			for (const variant of preset.variants) {
 				const used: string[] = variant.feedbacks.map((feedback: { feedbackId: string }) => feedback.feedbackId)

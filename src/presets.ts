@@ -261,6 +261,13 @@ export function UpdatePresets(self: ModuleInstance): void {
 		CHANGING_TEXT_FONT_SIZE,
 	)
 
+	presets.save = textButton({
+		name: 'Save: press this, then a router preset to overwrite it with the current routes',
+		background: CONTROL,
+		text: 'SAVE\nPRESET',
+		actions: [{ actionId: 'armSave', options: {} }],
+		feedbacks: [{ feedbackId: 'saveArmed', options: {}, background: LOCKED }, controlPushed],
+	})
 	presets.mute = textButton({
 		name: 'Mute or unmute the input or output pressed last',
 		background: CONTROL,
@@ -384,6 +391,8 @@ export function UpdatePresets(self: ModuleInstance): void {
 			feedbacks: [
 				{ feedbackId: 'presetLive', options: { preset }, background: SELECTED_SRC },
 				{ feedbackId: 'presetStaged', options: { preset }, background: STAGED },
+				// every preset flashes while SAVE waits, as any of them could be overwritten
+				{ feedbackId: 'saveArmed', options: {}, background: LOCKED },
 				controlPushed,
 			],
 		})
@@ -405,7 +414,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		{
 			id: 'router_presets',
 			name: 'Router presets',
-			definitions: [{ id: 'router_presets', type: 'simple', name: 'Router presets', presets: presetIds }],
+			definitions: [{ id: 'router_presets', type: 'simple', name: 'Router presets', presets: ['save', ...presetIds] }],
 		},
 		{
 			id: 'outputs',
