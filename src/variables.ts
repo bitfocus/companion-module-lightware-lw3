@@ -25,6 +25,8 @@ export function UpdateVariableDefinitions(
 		selected_output_label: { name: 'Selected output name, or OUT while none is selected (for button text)' },
 		selected_output_source: { name: 'Name of what is on the selected output' },
 		selected_output_lock_text: { name: 'Lock button text for the selected output, e.g. LOCK + name' },
+		selected_mute_text: { name: 'Mute button text for the input or output pressed last, e.g. MUTE + name' },
+		selected_output_hotplug_text: { name: 'Hotplug button text for the selected output, e.g. HOTPLUG + name' },
 	}
 	for (let input = 1; input <= state.shownInputs; input++) {
 		definitions[nameVar(`I${input}`)] = { name: `Name of input ${input}` }
@@ -66,6 +68,14 @@ export function selectionValues(state: RouterState): VariablesSchema {
 			selectedOutput === undefined
 				? '[UN]LOCK\nOUT'
 				: `${state.isLocked(selectedOutput) ? 'UNLOCK' : 'LOCK'}\n${state.outputName(selectedOutput)}`,
+		selected_mute_text: muteText(state),
+		selected_output_hotplug_text: `HOTPLUG\n${selectedOutput === undefined ? 'OUT' : state.outputName(selectedOutput)}`,
 		live_preset: state.livePreset ?? 'None',
 	}
+}
+
+function muteText(state: RouterState): string {
+	const port = state.lastSelectedPort
+	if (port === undefined) return '[UN]MUTE\nIN/OUT'
+	return `${state.isMuted(port) ? 'UNMUTE' : 'MUTE'}\n${state.portName(port)}`
 }

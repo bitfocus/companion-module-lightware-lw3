@@ -46,7 +46,24 @@ If the router is offline when you build a button, type the preset's name into th
 
 ### Locked outputs
 
-A route to a locked output is refused by the router, and the log says so.
+A route to a locked output is refused by the router, and the log says so. A locked output can't be muted or unmuted either.
+
+### Mute
+
+A muted port stays routed and sends black, without dropping its signal, so the display stays in sync. Muting an input blacks every output it feeds. That makes a mute different from **CLEAR XPT**, which removes the route.
+
+The **MUTE** button acts on the input or output pressed last, and turns blue while it's muted. Input and output buttons turn blue too. The **Mute or unmute a port** action can also name a port.
+
+### Hotplug
+
+A hotplug makes a port look unplugged for a moment, from the module or the ports page, without reaching into the rack.
+
+- **Output:** turns its 5V off, then on, which can wake a display that has lost its picture. Only that output is affected. The **HOTPLUG** button acts on the selected output and turns orange while it's off.
+- **Input:** turns its hotplug signal off, then on, so the source reads the EDID again, such as after a change to an EDID from the same maker that it didn't notice. Every output the input feeds drops its picture too, so this is an action with no button, and the ports page lists those outputs before it goes ahead. If the source fakes its own EDID, it does nothing useful.
+
+Each is off for 2 seconds unless the action says otherwise. On the MX2-8x8-HDMI20-L the router saw a display come back about half a second after its 5V came back on, and an input's source had its signal back about 3 seconds after its hotplug came back on. A port that is already off, set that way on purpose, is left alone. If the connection drops part way, the port is turned back on when the router is back.
+
+The router can see a display being detected, but not a picture, so whether a hotplug worked is for your eyes to judge.
 
 ### Port status
 
@@ -86,7 +103,7 @@ The **Soft reset the router** action restarts the router. There is deliberately 
 
 ## LOG
 
-The log shows what was found on connecting, reconnects, routes, names and locks changed from elsewhere, and anything the router refuses. Signal and cable changes are at debug level, along with any line from the router the module doesn't recognise.
+The log shows what was found on connecting, reconnects, routes, names, locks and mutes changed from elsewhere, hotplugs, and anything the router refuses. Signal and cable changes are at debug level, along with any line from the router the module doesn't recognise.
 
 ## VARIABLES
 
@@ -95,5 +112,5 @@ The log shows what was found on connecting, reconnects, routes, names and locks 
 - `sourcename_O1`: that input's name, or `None`
 - `stagedname_O1`: the name of the input staged for output 1
 - `live_preset`: a router preset matching the current routes, or `None`
-- `selected_input_label`, `selected_output_label`, `selected_output_source`, `selected_output_lock_text`: for button text
+- `selected_input_label`, `selected_output_label`, `selected_output_source`, `selected_output_lock_text`, `selected_mute_text`, `selected_output_hotplug_text`: for button text
 - `model`, `router_name`, `firmware`, `inputs`, `outputs`

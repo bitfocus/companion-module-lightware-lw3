@@ -51,6 +51,13 @@ describe('commands', () => {
 	it('keeps the number before a name', () => {
 		expect(Cmd.rename('O7', '2', 'Stage left')).toBe('SET /MEDIA/NAMES/VIDEO.O7=2;Stage left')
 	})
+
+	it('uses the mute and hotplug forms measured on the router', () => {
+		expect(Cmd.mute('I3')).toBe('CALL /MEDIA/XP/VIDEO:muteSource(I3)')
+		expect(Cmd.unmute('O8')).toBe('CALL /MEDIA/XP/VIDEO:unmuteDestination(O8)')
+		expect(Cmd.setInputHotplug(1, false)).toBe('SET /MEDIA/PORTS/VIDEO/I1/SETTINGS.EnableHPD=OFF')
+		expect(Cmd.setOutput5v(1, true)).toBe('SET /MEDIA/PORTS/VIDEO/O1/SETTINGS.Enable5V=true')
+	})
 })
 
 describe('parsing what the router sent', () => {
@@ -103,6 +110,8 @@ describe('parsing what the router sent', () => {
 		['TFF', false, false, true, true],
 		['LAA', true, false, false, false],
 		['MAA', false, true, false, false],
+		['UEE', true, true, false, true],
+		['MAE', false, true, false, true],
 	])('reads the port status %s', (entry, locked, muted, connected, signal) => {
 		expect(parsePortStatus(entry)).toEqual({ locked, muted, connected, signal })
 	})

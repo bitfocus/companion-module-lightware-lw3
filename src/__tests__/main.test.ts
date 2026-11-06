@@ -87,6 +87,23 @@ describe('the module against the fake router', () => {
 		await fake.close()
 	})
 
+	it('shows a mute over being selected, and pressing over a mute, on port buttons', async () => {
+		await module.init({ host: '' })
+		const presets = lastPresets(module)
+		// the layered button and its plain fallback list them in the same order
+		const order = (id: string): string[] =>
+			(presets[id].variants[1].feedbacks as { feedbackId: string }[]).map(({ feedbackId }) => feedbackId)
+		for (const [id, selected] of [
+			['input_1', 'sourceSelected'],
+			['output_1', 'destinationSelected'],
+			['routed_1', 'destinationSelected'],
+		]) {
+			const feedbacks = order(id)
+			expect(feedbacks.indexOf('portMuted')).toBeGreaterThan(feedbacks.indexOf(selected))
+			expect(feedbacks.indexOf('portMuted')).toBeLessThan(feedbacks.indexOf('internal:buttonPushed'))
+		}
+	})
+
 	it('offers actions and presets before any router has answered, unlike the old module', async () => {
 		await module.init({ host: '' })
 		const actions = lastCall(module.setActionDefinitions)
@@ -174,6 +191,113 @@ describe('the module against the fake router', () => {
 		await module.lockOutput(2, 'toggle')
 		await until(() => !module.state.isLocked(2))
 		expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:lockDestination(O2)', 'CALL /MEDIA/XP/VIDEO:unlockDestination(O2)'])
+	})
+
+	describe('mute', () => {
+		it('mutes and unmutes whichever was pressed last, input or output', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			module.selectOutput(7)
+			module.selectInput(3)
+			expect(variable(module, 'selected_mute_text')).toBe('MUTE\nInput 3')
+			await module.mutePort('selected', 'toggle')
+			await until(() => module.state.isMuted('I3'))
+			expect(variable(module, 'selected_mute_text')).toBe('UNMUTE\nInput 3')
+			module.selectOutput(8)
+			await module.mutePort('selected', 'toggle')
+			await until(() => module.state.isMuted('O8'))
+			await module.mutePort('O8', 'unmute')
+			await until(() => !module.state.isMuted('O8'))
+			expect(writes()).toEqual([
+				'CALL /MEDIA/XP/VIDEO:muteSource(I3)',
+				'CALL /MEDIA/XP/VIDEO:muteDestination(O8)',
+				'CALL /MEDIA/XP/VIDEO:unmuteDestination(O8)',
+			])
+			// the route stays, which is what makes a mute different from clearing it
+			expect(module.state.routes.get(8)).toBe(2)
+			expect(logged(module, 'warn')).toEqual([])
+		})
+
+		it('does nothing with nothing selected, and says why', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			expect(variable(module, 'selected_mute_text')).toBe('[UN]MUTE\nIN/OUT')
+			await module.mutePort('selected', 'toggle')
+			expect(writes()).toEqual([])
+			expect(logged(module, 'warn')).toContain('Select an input or an output before muting')
+		})
+
+		it('says a locked output is locked, rather than passing on the router\'s "Not exists"', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await module.lockOutput(7, 'lockDestination')
+			await until(() => module.state.isLocked(7))
+			await module.mutePort('O7', 'mute')
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:lockDestination(O7)'])
+			expect(logged(module, 'warn')).toContain("Output 7 is locked, so it can't be muted")
+		})
+
+		it('logs a mute made elsewhere', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			fake.outputs[1].muted = true
+			fake.announceStatus()
+			await until(() => module.state.isMuted('O2'))
+			expect(logged(module, 'info')).toContain('O2 muted')
+		})
+	})
+
+	describe('hotplug', () => {
+		it("turns an output's 5V off and back on, and shows it meanwhile", async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const done = module.hotplug('O8', 0.5)
+			await until(() => fake.output5v[7] === 'false')
+			expect(module.state.hotplugging.has('O8')).toBe(true)
+			expect(await done).toBeUndefined()
+			expect(fake.output5v[7]).toBe('true')
+			expect(module.state.hotplugging.has('O8')).toBe(false)
+			expect(writes()).toEqual([
+				'SET /MEDIA/PORTS/VIDEO/O8/SETTINGS.Enable5V=false',
+				'SET /MEDIA/PORTS/VIDEO/O8/SETTINGS.Enable5V=true',
+			])
+			expect(logged(module, 'info')).toContain('Hotplug: Output 8 off for 0.5 s')
+		})
+
+		it('says which outputs an input hotplug drops', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			expect(await module.hotplug('I2', 0.5)).toBeUndefined()
+			expect(writes()).toEqual([
+				'SET /MEDIA/PORTS/VIDEO/I2/SETTINGS.EnableHPD=OFF',
+				'SET /MEDIA/PORTS/VIDEO/I2/SETTINGS.EnableHPD=AUTO',
+			])
+			expect(logged(module, 'info')).toContain(
+				'Hotplug: Input 2 off for 0.5 s, which drops Output 2, Output 3, Output 6, Output 8',
+			)
+		})
+
+		it('leaves alone a port someone turned off on purpose', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			fake.output5v[2] = 'false'
+			expect(await module.hotplug('O3', 0.5)).toBe('Output 3 is already off')
+			expect(writes()).toEqual([])
+			expect(fake.output5v[2]).toBe('false')
+		})
+
+		it('turns a port back on after reconnecting, if the router stopped answering part way', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const done = module.hotplug('O8', 0.5)
+			await until(() => fake.output5v[7] === 'false')
+			fake.silent = true
+			await done
+			expect(logged(module, 'warn').join()).toContain('Output 8 is still off after its hotplug')
+			fake.silent = false
+			await until(() => fake.output5v[7] === 'true', 15_000)
+			expect(logged(module, 'info')).toContain('Hotplug: Output 8 back on')
+		}, 30_000)
 	})
 
 	it('flashes the next input, and clears the selection once the take is accepted', async () => {
@@ -722,7 +846,7 @@ describe('the module against the fake router', () => {
 		const presets = lastPresets(module)
 		const feedbackIds = Object.keys(lastCall(module.setFeedbackDefinitions))
 		const actionIds = Object.keys(lastCall(module.setActionDefinitions))
-		expect(Object.keys(presets)).toHaveLength(6 + 2 + 8 * 2 + 8)
+		expect(Object.keys(presets)).toHaveLength(8 + 2 + 8 * 2 + 8)
 		for (const [id, preset] of Object.entries(presets)) {
 			for (const variant of preset.variants) {
 				const used: string[] = variant.feedbacks.map((feedback: { feedbackId: string }) => feedback.feedbackId)
@@ -756,6 +880,21 @@ describe('the module against the fake router', () => {
 			await module.init({ host: '127.0.0.1', port })
 			await connected()
 		}
+
+		it('hotplugs from the page, and tells it which outputs an input feeds', async () => {
+			await ready()
+			const feeds = await module.handleHttpRequest({ ...request('GET', '/feeds'), query: { input: '2' } })
+			expect(JSON.parse(feeds.body ?? '{}')).toEqual({ outputs: ['Output 2', 'Output 3', 'Output 6', 'Output 8'] })
+			expect(await send('POST', '/hotplug', { port: 'X1' })).toEqual({
+				status: 400,
+				json: { error: 'The request needs a port' },
+			})
+			fake.output5v[0] = 'false'
+			expect(await send('POST', '/hotplug', { port: 'O1' })).toEqual({
+				status: 502,
+				json: { error: 'Output 1 is already off' },
+			})
+		})
 
 		it('serves a page whose script parses and never writes names as markup', async () => {
 			await ready()

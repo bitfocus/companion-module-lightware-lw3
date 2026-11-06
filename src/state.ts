@@ -31,6 +31,8 @@ export class RouterState {
 	/** Which kind of port was pressed last, which decides what the routed feedbacks show */
 	active: 'input' | 'output' | undefined
 	flashOn = true
+	/** Ports part way through a hotplug, with their 5V or HPD off */
+	readonly hotplugging = new Set<PortId>()
 
 	selectInput(input: number): void {
 		if (this.pairStaged) this.selectedOutput = undefined
@@ -118,6 +120,23 @@ export class RouterState {
 
 	isLocked(output: number): boolean {
 		return this.destinationStatus.get(output)?.locked === true
+	}
+
+	isMuted(port: PortId): boolean {
+		const statuses = port.startsWith('I') ? this.sourceStatus : this.destinationStatus
+		return statuses.get(Number(port.slice(1)))?.muted === true
+	}
+
+	/** The input or output pressed last, which is what the mute button acts on */
+	get lastSelectedPort(): PortId | undefined {
+		if (this.active === 'input' && this.selectedInput !== undefined) return `I${this.selectedInput}`
+		if (this.active === 'output' && this.selectedOutput !== undefined) return `O${this.selectedOutput}`
+		return undefined
+	}
+
+	portName(port: PortId): string {
+		const number = Number(port.slice(1))
+		return port.startsWith('I') ? this.inputName(number) : this.outputName(number)
 	}
 
 	/** The selected input, while taking it would change the selected output's route. This is what flashes. */

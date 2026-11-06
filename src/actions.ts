@@ -1,9 +1,11 @@
 import { inputChoices, outputChoices, portChoices, portNumber, presetChoices } from './choices.js'
 import type ModuleInstance from './main.js'
+import { HOTPLUG_DEFAULT_SECONDS, HOTPLUG_MAX_SECONDS } from './protocol.js'
 
 type NoOptions = Record<string, never>
 
 export type LockCommand = 'lockDestination' | 'unlockDestination' | 'toggle'
+export type MuteCommand = 'mute' | 'unmute' | 'toggle'
 
 export type ActionsSchema = {
 	xpt: { options: { input: string; output: string } }
@@ -19,6 +21,9 @@ export type ActionsSchema = {
 	clearStaged: { options: NoOptions }
 	setAutoRoute: { options: { mode: string } }
 	outputLock: { options: { output: number; cmd: string; useSelected?: boolean } }
+	mute: { options: { port: string; cmd: string } }
+	hotplugOutput: { options: { output: string; useSelected?: boolean; seconds: number } }
+	hotplugInput: { options: { input: string; seconds: number } }
 	rename: { options: { port: string; name: string } }
 	softreset: { options: NoOptions }
 }
@@ -28,6 +33,15 @@ export function UpdateActions(self: ModuleInstance): void {
 	const inputs = inputChoices(state)
 	const outputs = outputChoices(state)
 	const presets = presetChoices(state)
+	const hotplugSeconds = {
+		type: 'number' as const,
+		id: 'seconds' as const,
+		label: 'Off for (seconds)',
+		default: HOTPLUG_DEFAULT_SECONDS,
+		min: 0.5,
+		max: HOTPLUG_MAX_SECONDS,
+		step: 0.5,
+	}
 
 	self.setActionDefinitions({
 		xpt: {
@@ -162,6 +176,61 @@ export function UpdateActions(self: ModuleInstance): void {
 					action.options.useSelected ? state.selectedOutput : Number(action.options.output),
 					String(action.options.cmd) as LockCommand,
 				),
+		},
+		mute: {
+			name: 'Mute or unmute a port',
+			description:
+				'A muted port stays routed and sends black without dropping its signal. Muting an input blacks every output it feeds. A locked output cannot be muted or unmuted.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'selected',
+					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...portChoices(state)],
+				},
+				{
+					type: 'dropdown',
+					id: 'cmd',
+					label: 'Mute',
+					default: 'toggle',
+					choices: [
+						{ id: 'toggle', label: 'Toggle' },
+						{ id: 'mute', label: 'Mute' },
+						{ id: 'unmute', label: 'Unmute' },
+					],
+				},
+			],
+			callback: async (action) => self.mutePort(String(action.options.port), String(action.options.cmd) as MuteCommand),
+		},
+		hotplugOutput: {
+			name: 'Hotplug an output (5V off, then on)',
+			description:
+				'Looks to the display as if its cable was pulled and put back, which can wake one that has lost its picture. Only this output is affected.',
+			options: [
+				{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs },
+				{
+					type: 'checkbox',
+					id: 'useSelected',
+					label: 'Use the selected output (ignores the output above)',
+					default: false,
+				},
+				hotplugSeconds,
+			],
+			callback: async (action) => {
+				const output = action.options.useSelected ? state.selectedOutput : portNumber(action.options.output, 'O')
+				await self.hotplug(output === undefined ? undefined : `O${output}`, Number(action.options.seconds))
+			},
+		},
+		hotplugInput: {
+			name: 'Hotplug an input (HPD off, then on)',
+			description:
+				'Makes the source read the EDID again, such as after an EDID change it missed. Every output this input feeds drops its picture too. It does nothing useful if the source fakes its own EDID. There is no preset for this on purpose.',
+			options: [{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs }, hotplugSeconds],
+			callback: async (action) => {
+				const input = portNumber(action.options.input, 'I')
+				await self.hotplug(input === undefined ? undefined : `I${input}`, Number(action.options.seconds))
+			},
 		},
 		rename: {
 			name: 'Rename a port',

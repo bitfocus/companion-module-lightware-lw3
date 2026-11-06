@@ -1,5 +1,6 @@
 import { inputChoices, outputChoices, portChoices, portNumber, presetChoices } from './choices.js'
 import type ModuleInstance from './main.js'
+import type { PortId } from './protocol.js'
 
 export type FeedbacksSchema = {
 	route: { type: 'boolean'; options: { input: number; output: number } }
@@ -18,6 +19,8 @@ export type FeedbacksSchema = {
 	portLegend: { type: 'boolean'; options: { port: string; level: string } }
 	presetLive: { type: 'boolean'; options: { preset: string } }
 	presetStaged: { type: 'boolean'; options: { preset: string } }
+	portMuted: { type: 'boolean'; options: { port: string } }
+	hotplugging: { type: 'boolean'; options: { port: string } }
 }
 
 export function UpdateFeedbacks(self: ModuleInstance): void {
@@ -202,6 +205,49 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0x008000, color: 0xffffff },
 			options: [{ type: 'dropdown', id: 'port', label: 'Port', default: 'O1', choices: ports }],
 			callback: (feedback) => portStatus(feedback.options.port)?.connected === true,
+		},
+		portMuted: {
+			type: 'boolean',
+			name: 'Muted port',
+			description: 'True if this input or output is muted, sending black',
+			defaultStyle: { bgcolor: 0x0000ff, color: 0xffffff },
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'selected',
+					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...ports],
+				},
+			],
+			callback: (feedback) => {
+				const port = feedback.options.port === 'selected' ? state.lastSelectedPort : feedback.options.port
+				return typeof port === 'string' && /^[IO]\d+$/.test(port) && state.isMuted(port as PortId)
+			},
+		},
+		hotplugging: {
+			type: 'boolean',
+			name: 'Hotplug in progress',
+			description: "True while this port's 5V or HPD is off for a hotplug",
+			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'selected',
+					choices: [{ id: 'selected', label: 'The selected output' }, ...ports],
+				},
+			],
+			callback: (feedback) => {
+				const port =
+					feedback.options.port === 'selected'
+						? state.selectedOutput === undefined
+							? undefined
+							: `O${state.selectedOutput}`
+						: feedback.options.port
+				return typeof port === 'string' && state.hotplugging.has(port as PortId)
+			},
 		},
 		presetLive: {
 			type: 'boolean',

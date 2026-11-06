@@ -20,6 +20,9 @@ export type EdidProperty = 'Validity' | 'MonitorName' | 'PreferredResolution'
 export const MAX_NAME_LENGTH = 62
 /** Longest router name it stores, keeping the first 39 characters of anything longer */
 export const MAX_ROUTER_NAME_LENGTH = 39
+/** Measured: the router stops seeing a display about 1 s after its 5V goes off, so 2 s is enough */
+export const HOTPLUG_DEFAULT_SECONDS = 2
+export const HOTPLUG_MAX_SECONDS = 10
 
 /** Paths are built from preset names, so a name that could change the command never reaches the router */
 const SAFE_PRESET_NAME = /^[A-Za-z0-9_-]+$/
@@ -74,6 +77,17 @@ export const Cmd = {
 	/** Several routes in one command change together, in a single change message */
 	switch: (routes: Route[]): string => `CALL ${XP}:switch(${routes.map(routeText).join(';')})`,
 	lock: (output: number): string => `CALL ${XP}:lockDestination(O${output})`,
+	/** A muted port stays routed and sends black, without dropping the signal */
+	mute: (port: PortId): string => `CALL ${XP}:${port.startsWith('I') ? 'muteSource' : 'muteDestination'}(${port})`,
+	unmute: (port: PortId): string =>
+		`CALL ${XP}:${port.startsWith('I') ? 'unmuteSource' : 'unmuteDestination'}(${port})`,
+	/** An input's hotplug: OFF tells the source the router has gone, AUTO follows the source's 5V */
+	inputHotplug: (input: number): string => `GET ${PORTS}/I${input}/SETTINGS.EnableHPD`,
+	setInputHotplug: (input: number, on: boolean): string =>
+		`SET ${PORTS}/I${input}/SETTINGS.EnableHPD=${on ? 'AUTO' : 'OFF'}`,
+	/** An output's 5V: off looks to a display as if its cable was pulled */
+	output5v: (output: number): string => `GET ${PORTS}/O${output}/SETTINGS.Enable5V`,
+	setOutput5v: (output: number, on: boolean): string => `SET ${PORTS}/O${output}/SETTINGS.Enable5V=${on}`,
 	unlock: (output: number): string => `CALL ${XP}:unlockDestination(O${output})`,
 	rename: (port: PortId, prefix: string, name: string): string => `SET ${NAMES}.${port}=${prefix};${name}`,
 }
@@ -165,8 +179,8 @@ export interface PortStatus {
 }
 
 /**
- * `TFF` is a letter and two hex digits. T is free, L locked, M muted and U (from Lightware's whitepaper,
- * not seen yet) both. In the last digit, bit 0 is the connection and bit 2 the signal, worked out from
+ * `TFF` is a letter and two hex digits. T is free, L locked, M muted and U both, seen by locking a muted
+ * output. In the last digit, bit 0 is the connection and bit 2 the signal, worked out from
  * these values while pulling cables: A neither, B connected only, E signal only, F both.
  */
 export function parsePortStatus(entry: string): PortStatus | undefined {

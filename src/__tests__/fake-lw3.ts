@@ -51,6 +51,10 @@ export class FakeLw3 {
 	readonly emulated: string[]
 	readonly inputHdcp: string[]
 	readonly outputHdcp: string[]
+	/** `EnableHPD` on inputs, AUTO or OFF */
+	readonly inputHotplug: string[]
+	/** `Enable5V` on outputs, true or false */
+	readonly output5v: string[]
 	/** Everything received, without the ids */
 	readonly received: string[] = []
 	/** Stop answering, while staying connected */
@@ -68,6 +72,8 @@ export class FakeLw3 {
 		this.emulated = Array.from({ length: inputs }, () => 'F137')
 		this.inputHdcp = Array.from({ length: inputs }, () => '2')
 		this.outputHdcp = Array.from({ length: outputs }, () => 'AUTO')
+		this.inputHotplug = Array.from({ length: inputs }, () => 'AUTO')
+		this.output5v = Array.from({ length: outputs }, () => 'true')
 		this.edidSlots.set('F1', { name: 'D640x480p60', resolution: '640x480p60.00Hz', valid: true })
 		this.edidSlots.set('F137', { name: 'HUHDp60_444', resolution: '3840x2160p60.00Hz', valid: true })
 		for (let i = 1; i <= outputs; i++) {
@@ -132,6 +138,12 @@ export class FakeLw3 {
 		if (direction === 'Source') this.sourceDetail = value
 		else this.destinationDetail = value
 		this.#announce(XP, `${direction}PortGuiStatus=${value}`)
+	}
+
+	/** As when a port is changed on the router's own web page */
+	announceStatus(): void {
+		this.#announce(XP, `SourcePortStatus=${statusList(this.inputs)}`)
+		this.#announce(XP, `DestinationPortStatus=${statusList(this.outputs)}`)
 	}
 
 	setSignal(port: string, connected: boolean, signal: boolean): void {
@@ -212,6 +224,19 @@ export class FakeLw3 {
 		const hdcp = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(HdcpVersion|HdcpMode)=(.*)$/.exec(command)
 		if (hdcp) return this.#setHdcp(hdcp[1], hdcp[2], Number(hdcp[3]), hdcp[4], hdcp[5], changes)
 
+		const hotplug = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(EnableHPD|Enable5V)=(.*)$/.exec(command)
+		if (hotplug) {
+			const [, path, kind, number, property, value] = hotplug
+			const list = kind === 'I' ? this.inputHotplug : this.output5v
+			const allowed = kind === 'I' ? ['AUTO', 'OFF'] : ['true', 'false']
+			if (!allowed.includes(value) || (kind === 'I') !== (property === 'EnableHPD')) {
+				return [`pE ${path}.${property} %E004: Invalid value`]
+			}
+			list[Number(number) - 1] = value
+			changes.push([path, `${property}=${value}`])
+			return [`pw ${path}.${property}=${value}`]
+		}
+
 		const get = /^GET (.*)$/.exec(command)
 		if (!get) return notExists(command)
 		const target = get[1]
@@ -233,6 +258,13 @@ export class FakeLw3 {
 		const setting = /^\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS\.(HdcpVersion|HdcpMode)$/.exec(target)
 		if (setting) {
 			const value = (setting[1] === 'I' ? this.inputHdcp : this.outputHdcp)[Number(setting[2]) - 1]
+			return [`pw ${target}=${value}`]
+		}
+		const hotplugGet = /^\/MEDIA\/PORTS\/VIDEO\/(I(\d+)\/SETTINGS\.EnableHPD|O(\d+)\/SETTINGS\.Enable5V)$/.exec(target)
+		if (hotplugGet) {
+			const value = hotplugGet[2]
+				? this.inputHotplug[Number(hotplugGet[2]) - 1]
+				: this.output5v[Number(hotplugGet[3]) - 1]
 			return [`pw ${target}=${value}`]
 		}
 		if (target.startsWith('/MEDIA/PORTS/VIDEO/') && target.includes('*')) return notExists(target)
@@ -270,6 +302,19 @@ export class FakeLw3 {
 
 		if (path !== XP) return fail('E002', 'Not exists')
 		if (method === 'switch') return this.#switch(args, ok, fail, changes)
+		const mute = /^(un)?mute(Source|Destination)$/.exec(method)
+		if (mute) {
+			const source = mute[2] === 'Source'
+			const match = new RegExp(`^${source ? 'I' : 'O'}(\\d+)$`).exec(args)
+			const port = match ? (source ? this.inputs : this.outputs)[Number(match[1]) - 1] : undefined
+			const wanted = !mute[1]
+			// measured: the wrong kind of port, the state it is already in, and a locked output all get this
+			if (!port || port.muted === wanted || port.locked) return fail('E002', 'Not exists')
+			port.muted = wanted
+			const property = source ? 'SourcePortStatus' : 'DestinationPortStatus'
+			changes.push([XP, `${property}=${statusList(source ? this.inputs : this.outputs)}`])
+			return ok
+		}
 		const lock = /^(un)?lockDestination$/.exec(method)
 		if (lock) {
 			const port = this.outputs[Number(args.slice(1)) - 1]

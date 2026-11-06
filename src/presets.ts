@@ -7,6 +7,7 @@ import { BUTTON_PNG_BASE64 } from './button-image.js'
 import type { FeedbacksSchema } from './feedbacks.js'
 import type ModuleInstance from './main.js'
 import type { ModuleSchema } from './main.js'
+import { HOTPLUG_DEFAULT_SECONDS } from './protocol.js'
 import { nameVar, sourceNameVar, stagedNameVar } from './variables.js'
 
 // Companion swaps this for the connection's label wherever it appears in preset text
@@ -22,6 +23,7 @@ const SELECTED_DST = 0xffff00
 const SELECTED_SRC = 0x00ff00
 const STAGED = 0xff8000
 const LOCKED = 0xff0000
+const MUTED = 0x0050ff
 /** The router web interface's port legend. Not connected has no border, as that says enough. */
 const LEGEND: [string, number][] = [
 	['connected', 0xfffb00],
@@ -254,6 +256,25 @@ export function UpdatePresets(self: ModuleInstance): void {
 		CHANGING_TEXT_FONT_SIZE,
 	)
 
+	presets.mute = textButton({
+		name: 'Mute or unmute the input or output pressed last',
+		background: CONTROL,
+		text: `${VAR}selected_mute_text)`,
+		fontsize: CHANGING_TEXT_FONT_SIZE,
+		actions: [{ actionId: 'mute', options: { port: 'selected', cmd: 'toggle' } }],
+		feedbacks: [{ feedbackId: 'portMuted', options: { port: 'selected' }, background: MUTED }, controlPushed],
+	})
+	presets.hotplug = textButton({
+		name: 'Hotplug the selected output: 5V off, then on, to wake its display',
+		background: CONTROL,
+		text: `${VAR}selected_output_hotplug_text)`,
+		fontsize: CHANGING_TEXT_FONT_SIZE,
+		actions: [
+			{ actionId: 'hotplugOutput', options: { output: 'O1', useSelected: true, seconds: HOTPLUG_DEFAULT_SECONDS } },
+		],
+		feedbacks: [{ feedbackId: 'hotplugging', options: { port: 'selected' }, background: STAGED }, controlPushed],
+	})
+
 	presets.auto_route = textButton({
 		name: 'Step the auto-route mode: off, stage, cut',
 		background: CONTROL,
@@ -281,6 +302,8 @@ export function UpdatePresets(self: ModuleInstance): void {
 			feedbacks: [
 				{ feedbackId: 'routedInput', options: { input: `I${input}` }, background: SELECTED_SRC },
 				{ feedbackId: 'sourceSelected', options: { port: input }, background: SELECTED_SRC },
+				// above selected, so a muted port always shows it, and below pressed, which lights while held
+				{ feedbackId: 'portMuted', options: { port: `I${input}` }, background: MUTED },
 				{ feedbackId: PUSHED, options: {}, background: SELECTED_SRC },
 			],
 		})
@@ -295,6 +318,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		const feedbacks: PresetFeedback[] = [
 			{ feedbackId: 'routedOutput', options: { output: port }, background: SELECTED_DST },
 			{ feedbackId: 'destinationSelected', options: { port: output }, background: SELECTED_DST },
+			{ feedbackId: 'portMuted', options: { port }, background: MUTED },
 			{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
 			{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED },
 			{ feedbackId: 'outputLocked', options: { output: port }, background: LOCKED },
@@ -328,6 +352,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			actions: [{ actionId: 'selectDestination', options }],
 			feedbacks: [
 				{ feedbackId: 'destinationSelected', options: { port: output }, background: SELECTED_DST },
+				{ feedbackId: 'portMuted', options: { port }, background: MUTED },
 				{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
 				{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED, shows: ['arrow', 'staged'] },
 				{
@@ -368,7 +393,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					id: 'switching',
 					type: 'simple',
 					name: 'Switching',
-					presets: ['blank', 'take', 'clear_staged', 'unroute', 'lock', 'auto_route'],
+					presets: ['blank', 'take', 'clear_staged', 'unroute', 'lock', 'mute', 'hotplug', 'auto_route'],
 				},
 			],
 		},

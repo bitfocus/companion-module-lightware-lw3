@@ -33,6 +33,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(routing):** with auto-route on Stage, clearing a route is staged with the others.
 - **feat(presets):** a router preset's name can be typed into its action while the router is offline.
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
+- **feat(mute):** new **Mute or unmute a port** action, **Muted port** feedback, and a **MUTE** button that acts on the input or output pressed last. A muted port stays routed and sends black. Mutes made elsewhere are logged.
+- **feat(hotplug):** new **Hotplug an output** action and **HOTPLUG** button, which turn an output's 5V off and on to wake a display, and a **Hotplug an input** action, which makes a source read the EDID again. The ports page has a Hotplug button on every port, with a confirmation that lists the outputs an input hotplug drops. New **Hotplug in progress** feedback.
 - **feat(status):** new **Signal on a port**, **Cable connected to a port** and **Port status** feedbacks. Input and output presets show a coloured border with the legend from the router's web interface.
 - **feat(ports):** a page at `/instance/<connection label>/` to edit names, EDID and HDCP for all ports together, with a confirmation listing the changes, all-or-nothing checks, paste from a spreadsheet, Revert and Copy all. It also stores and deletes EDIDs in U slots. EDID changes go out as one command.
 - **feat(ports):** the page updates live from the router's WebSocket, keeps anything being edited, and shows whether it is Live. Names with accents or emoji are sent as the nearest plain characters, and EDID lists can be filtered.
@@ -60,9 +62,13 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - Upgrading a v2 configuration.
 - How many WebSockets and subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
 - The ports page's WebSocket against the fake router, which has none by design.
+- Whether the router announces a mute made from its front panel. Mutes made by command are announced.
+- Hotplugging an input from the module, rather than by command. The command was tested with a MacBook on Input 1.
 
 ### Tested on hardware
 
 In Companion 5.1.1, and again after moving to Node 26 on Companion 5.1.2 (routing, TAKE, status borders, the ports page and the built package): recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken. The ports page was tried on spare ports: names including `( ) # %`, HDCP, setting an EDID, storing and deleting one, Revert, and paste.
 
 With a command line test: several routes in one command, unrouting, a route to a locked output, renaming, and the router's announcement of a route changed elsewhere and of cables being unplugged.
+
+Mute and hotplug, with a command line test: muting and unmuting inputs and outputs, several in one command, a mute staying through a route change, a locked output refusing to mute, and `U` for a locked and muted output. Hotplug on Input 1 with a MacBook and on Output 1 with a display, timed from the router's status.

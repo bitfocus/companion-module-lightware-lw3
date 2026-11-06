@@ -8,7 +8,7 @@ import {
 	type LogLevel,
 	type SomeCompanionConfigField,
 } from '@companion-module/base'
-import { UpdateActions, type ActionsSchema, type LockCommand } from './actions.js'
+import { UpdateActions, type ActionsSchema, type LockCommand, type MuteCommand } from './actions.js'
 import { Lw3Client } from './client.js'
 import {
 	AUTO_ROUTE_LABELS,
@@ -29,6 +29,8 @@ import { UpdatePresets } from './presets.js'
 import {
 	Cmd,
 	DEFAULT_PORT,
+	HOTPLUG_DEFAULT_SECONDS,
+	HOTPLUG_MAX_SECONDS,
 	EDID_BANKS,
 	ErrorCode,
 	MAX_NAME_LENGTH,
@@ -103,6 +105,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** Ports this module is renaming right now, for the same reason */
 	readonly #ownRenames = new Set<string>()
 	#heartbeatTimer: ReturnType<typeof setInterval> | undefined
+	/** Hotplugs whose port couldn't be turned back on, to finish when the router is back */
+	readonly #unfinishedHotplugs = new Set<PortId>()
 	#connectTimer: ReturnType<typeof setTimeout> | undefined
 	#presetReadTimer: ReturnType<typeof setTimeout> | undefined
 	#flashTimer: ReturnType<typeof setInterval> | undefined
@@ -159,6 +163,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			storeEdid: async (from: string, to: string) =>
 				this.#edidCommand(Cmd.copyEdid(from, to), `Stored ${from} in ${to}`),
 			deleteEdid: async (slot: string) => this.#edidCommand(Cmd.deleteEdid(slot), `Deleted the EDID in ${slot}`),
+			hotplug: async (port: string) => this.hotplug(port as PortId),
+			outputsFedBy: (input: number) => this.outputsFedBy(input),
 		}
 		return handlePortsRequest(host, request)
 	}
@@ -558,6 +564,113 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}
 	}
 
+	/** `selected` is the input or output pressed last */
+	async mutePort(target: string, command: MuteCommand): Promise<void> {
+		const port =
+			target === 'selected' ? this.state.lastSelectedPort : /^[IO]\d+$/.test(target) ? (target as PortId) : undefined
+		if (port === undefined) {
+			this.log('warn', 'Select an input or an output before muting')
+			return
+		}
+		const name = this.state.portName(port)
+		const mute = command === 'toggle' ? !this.state.isMuted(port) : command === 'mute'
+		const doing = mute ? 'mute' : 'unmute'
+		// measured: the router refuses a locked output with "Not exists", which says nothing useful
+		if (port.startsWith('O') && this.state.isLocked(Number(port.slice(1)))) {
+			this.log('warn', `${name} is locked, so it can't be ${doing}d`)
+			return
+		}
+		const lines = await this.#client.request(mute ? Cmd.mute(port) : Cmd.unmute(port), true)
+		if (lines === undefined) {
+			this.log('warn', `Not connected, so ${name} wasn't ${doing}d`)
+			return
+		}
+		const error = replyError(lines)
+		// the router says "Not exists" when a port is already how it was asked to be
+		if (error && error.code !== ErrorCode.notExists) {
+			this.log('warn', `The router refused to ${doing} ${name}: ${error.message}`)
+		}
+	}
+
+	/**
+	 * Turns an output's 5V, or an input's hotplug, off and back on, as if its cable was pulled and put
+	 * back. An input's affects every output it feeds. Returns why it didn't happen, if it didn't.
+	 */
+	async hotplug(port: PortId | undefined, seconds = HOTPLUG_DEFAULT_SECONDS): Promise<string | undefined> {
+		if (port === undefined) {
+			this.log('warn', 'Select an output before hotplugging')
+			return 'No port selected'
+		}
+		const number = Number(port.slice(1))
+		const isInput = port.startsWith('I')
+		const name = this.state.portName(port)
+		if (this.state.hotplugging.has(port)) return `${name} is already being hotplugged`
+		const hold = Math.min(Math.max(Number(seconds) || HOTPLUG_DEFAULT_SECONDS, 0.5), HOTPLUG_MAX_SECONDS)
+		const read = await this.#client.request(isInput ? Cmd.inputHotplug(number) : Cmd.output5v(number), true)
+		if (read === undefined) {
+			this.log('warn', `Not connected, so ${name} wasn't hotplugged`)
+			return 'Not connected'
+		}
+		const value = parseProperty(read.find((line) => line.startsWith('pw ')) ?? '')?.value
+		const normal = isInput ? 'AUTO' : 'true'
+		if (value !== normal) {
+			// someone turned it off on purpose, and a hotplug would leave it on
+			const why = value === undefined ? `the router didn't say how ${name} is set` : `${name} is already off`
+			this.log('warn', `Hotplug not sent: ${why}`)
+			return why
+		}
+		const fed = isInput ? this.outputsFedBy(number) : []
+		const feeds = fed.length > 0 ? `, which drops ${fed.join(', ')}` : ''
+		this.log('info', `Hotplug: ${name} off for ${hold} s${feeds}`)
+		this.state.hotplugging.add(port)
+		this.checkFeedbacks('hotplugging')
+		const off = await this.#client.request(
+			isInput ? Cmd.setInputHotplug(number, false) : Cmd.setOutput5v(number, false),
+			true,
+		)
+		const offError = off === undefined ? 'Not connected' : replyError(off)?.message
+		if (offError) {
+			this.state.hotplugging.delete(port)
+			this.checkFeedbacks('hotplugging')
+			this.log('warn', `The router refused to hotplug ${name}: ${offError}`)
+			return offError
+		}
+		await new Promise((resolve) => setTimeout(resolve, hold * 1000))
+		await this.#finishHotplug(port)
+		return undefined
+	}
+
+	/** If the router can't be told, it is told on reconnecting, so a port is never left off */
+	async #finishHotplug(port: PortId): Promise<void> {
+		const number = Number(port.slice(1))
+		const name = this.state.portName(port)
+		const on = await this.#client.request(
+			port.startsWith('I') ? Cmd.setInputHotplug(number, true) : Cmd.setOutput5v(number, true),
+			true,
+		)
+		const error = on === undefined ? 'Not connected' : replyError(on)?.message
+		if (error) {
+			this.#unfinishedHotplugs.add(port)
+			this.log(
+				'warn',
+				`${name} is still off after its hotplug (${error}). It is turned back on when the router is back.`,
+			)
+			return
+		}
+		this.#unfinishedHotplugs.delete(port)
+		this.state.hotplugging.delete(port)
+		this.checkFeedbacks('hotplugging')
+		this.log('info', `Hotplug: ${name} back on`)
+	}
+
+	/** For the log, and the warning on the ports page */
+	outputsFedBy(input: number): string[] {
+		return [...this.state.routes]
+			.filter(([, routed]) => routed === input)
+			.sort(([a], [b]) => a - b)
+			.map(([output]) => this.state.outputName(output))
+	}
+
 	async renamePort(port: string, name: string): Promise<void> {
 		const typed = cleanName(name)
 		const clean = plainName(typed)
@@ -748,6 +861,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			)
 		}
 		this.#startHeartbeat()
+		for (const port of [...this.#unfinishedHotplugs]) await this.#finishHotplug(port)
 	}
 
 	/** Returns false if the router has no routing where this module looks for it */
@@ -896,10 +1010,9 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#applyDestinationStatus(value: string): void {
 		const locks = this.#applyStatus(value, this.state.destinationStatus, 'O')
 		if (locks.changed) this.checkFeedbacks('portSignal', 'portConnected', 'portLegend')
-		if (locks.lockChanged) {
-			this.setVariableValues(selectionValues(this.state))
-			this.checkFeedbacks('outputLocked')
-		}
+		if (locks.lockChanged || locks.muteChanged) this.setVariableValues(selectionValues(this.state))
+		if (locks.lockChanged) this.checkFeedbacks('outputLocked')
+		if (locks.muteChanged) this.checkFeedbacks('portMuted')
 	}
 
 	#applySourceStatus(value: string): void {
@@ -911,7 +1024,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.#scheduleDefinitions()
 			this.setVariableValues({ inputs: this.state.inputCount, ...portNameValues(this.state) })
 		}
-		if (this.#applyStatus(value, this.state.sourceStatus, 'I').changed) {
+		const status = this.#applyStatus(value, this.state.sourceStatus, 'I')
+		if (status.muteChanged) {
+			this.setVariableValues(selectionValues(this.state))
+			this.checkFeedbacks('portMuted')
+		}
+		if (status.changed) {
 			this.checkFeedbacks('portSignal', 'portConnected', 'portLegend')
 		}
 	}
@@ -920,9 +1038,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		value: string,
 		statuses: Map<number, PortStatus>,
 		kind: 'I' | 'O',
-	): { changed: boolean; lockChanged: boolean } {
+	): { changed: boolean; lockChanged: boolean; muteChanged: boolean } {
 		let changed = false
 		let lockChanged = false
+		let muteChanged = false
 		parseList(value).forEach((entry, index) => {
 			const port = index + 1
 			const status = parsePortStatus(entry)
@@ -942,6 +1061,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			statuses.set(port, status)
 			changed = true
 			if (before?.locked !== status.locked) lockChanged = true
+			if (before?.muted !== status.muted) muteChanged = true
 			if (before && !this.#reading) {
 				if (before.signal !== status.signal) {
 					this.log('debug', `${kind}${port} signal ${status.signal ? 'present' : 'lost'}`)
@@ -952,9 +1072,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				if (before.locked !== status.locked) {
 					this.log('info', `${kind}${port} ${status.locked ? 'locked' : 'unlocked'}`)
 				}
+				if (before.muted !== status.muted) {
+					this.log('info', `${kind}${port} ${status.muted ? 'muted' : 'unmuted'}`)
+				}
 			}
 		})
-		return { changed, lockChanged }
+		return { changed, lockChanged, muteChanged }
 	}
 
 	#applyName(port: string, value: string): void {
@@ -983,7 +1106,16 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		// start from the bright half, so a press shows straight away
 		this.#stopFlash()
 		this.#syncFlash()
-		this.checkFeedbacks('route', 'routedInput', 'routedOutput', 'sourceSelected', 'destinationSelected', 'outputNext')
+		this.checkFeedbacks(
+			'route',
+			'routedInput',
+			'routedOutput',
+			'sourceSelected',
+			'destinationSelected',
+			'outputNext',
+			'portMuted',
+			'hotplugging',
+		)
 	}
 
 	#stagedChanged(): void {

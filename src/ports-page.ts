@@ -49,6 +49,10 @@ export interface PortsHost {
 	applyPorts(changes: PortChanges): Promise<ChangeErrors>
 	storeEdid(from: string, to: string): Promise<string | undefined>
 	deleteEdid(slot: string): Promise<string | undefined>
+	/** Returns why it didn't happen, if it didn't */
+	hotplug(port: string): Promise<string | undefined>
+	/** Names of the outputs an input feeds, which a hotplug on it drops too */
+	outputsFedBy(input: number): string[]
 }
 
 export const INPUT_HDCP = ['0', '2', '3']
@@ -190,6 +194,11 @@ export async function handlePortsRequest(
 			? json(200, { ...snapshot, router: host.routerAddress })
 			: json(503, { error: 'Not connected to the router' })
 	}
+	if (path === '/feeds' && request.method === 'GET') {
+		const input = Number(request.query.input)
+		if (!Number.isInteger(input) || input < 1) return json(400, { error: 'The request needs an input number' })
+		return json(200, { outputs: host.outputsFedBy(input) })
+	}
 	if (path === '/edids' && request.method === 'GET') {
 		const edids = await host.readEdids()
 		return edids ? json(200, { edids }) : json(503, { error: 'Not connected to the router' })
@@ -201,6 +210,12 @@ export async function handlePortsRequest(
 	if (path === '/ports' && request.method === 'POST') return applyChanges(host, request)
 	if (path === '/edid/store' && request.method === 'POST') return store(host, request)
 	if (path === '/edid/delete' && request.method === 'POST') return remove(host, request)
+	if (path === '/hotplug' && request.method === 'POST') {
+		const { port } = parseBody(request) ?? {}
+		if (typeof port !== 'string' || !/^[IO]\d+$/.test(port)) return json(400, { error: 'The request needs a port' })
+		const error = await host.hotplug(port)
+		return error ? json(502, { error }) : json(200, {})
+	}
 	return json(404, { error: 'Not found' })
 }
 
@@ -274,13 +289,13 @@ dialog .warn { color: var(--bad); }
 <th>Port</th><th>Name</th>
 <th>EDID<br><select id="all-edid" aria-label="Set every input's EDID"></select></th>
 <th>HDCP<br><select id="all-input-hdcp" aria-label="Set every input's HDCP"></select></th>
-<th></th></tr></thead><tbody></tbody></table></div>
+<th></th><th></th></tr></thead><tbody></tbody></table></div>
 <p class="note">An orange EDID is dynamic: it follows whatever display was last on that output, so it can change by itself.</p>
 <h2>Outputs</h2>
 <div class="scroll"><table id="outputs"><thead><tr>
 <th>Port</th><th>Name</th>
 <th>HDCP<br><select id="all-output-hdcp" aria-label="Set every output's HDCP"></select></th>
-<th></th></tr></thead><tbody></tbody></table></div>
+<th></th><th></th></tr></thead><tbody></tbody></table></div>
 <h2>Stored EDIDs</h2>
 <div class="store">
 <select id="store-from" aria-label="EDID to store"></select>
@@ -293,6 +308,7 @@ dialog .warn { color: var(--bad); }
 <button id="delete">Delete</button>
 </div>
 <p class="note">Changes here go to the router straight away, once confirmed.</p>
+<p class="note">Hotplug makes a port look unplugged for 2 seconds. On an output it can wake a display that lost its picture. On an input it makes the source read its EDID again, and every output that input feeds drops too.</p>
 <p class="note">Live means changes made on the router appear here as they happen. Not live means this browser can't reach the router itself: everything still works, but press Reload to see them. The router never announces stored EDIDs, so they are read again when you click the filter box.</p>
 </main>
 <dialog id="confirm">
@@ -416,9 +432,15 @@ function buildRow(kind, data) {
 	fillSelect(row.hdcp, kind === 'I' ? INPUT_HDCP : OUTPUT_HDCP, data.hdcp)
 	const hdcpCell = document.createElement('td')
 	hdcpCell.append(row.hdcp)
+	const hotplug = document.createElement('button')
+	hotplug.textContent = 'Hotplug'
+	hotplug.setAttribute('aria-label', 'Hotplug ' + port)
+	hotplug.addEventListener('click', () => hotplugPort(row, hotplug))
+	const hotplugCell = document.createElement('td')
+	hotplugCell.append(hotplug)
 	row.status = document.createElement('td')
 	row.status.className = 'status'
-	tr.append(hdcpCell, row.status)
+	tr.append(hdcpCell, hotplugCell, row.status)
 	for (const control of [row.name, row.edid, row.hdcp]) {
 		if (control) control.addEventListener('input', () => { setStatus(row, ''); refreshRow(row) })
 	}
@@ -748,6 +770,27 @@ async function slotAction(path, body, title, lines, warning) {
 		render(snapshot)
 		say('Done.')
 	}
+}
+/** Asks first, naming the port, as a mistaken tap drops a picture */
+async function hotplugPort(row, button) {
+	const label = row.port + ' (' + row.original.name + ')'
+	let warning = ''
+	if (row.kind === 'I') {
+		const feeds = await fetch(base + 'feeds?input=' + row.number).then((response) => response.json()).catch(() => undefined)
+		const outputs = feeds && feeds.outputs
+		warning = !outputs
+			? 'Every output this input feeds drops its picture too.'
+			: outputs.length
+				? 'These outputs drop their picture too: ' + outputs.join(', ') + '.'
+				: 'This input feeds no outputs.'
+	}
+	if (!(await ask('Hotplug ' + label + '?', [row.kind === 'I' ? 'Hotplug off for 2 seconds, then on' : '5V off for 2 seconds, then on'], warning))) return
+	button.disabled = true
+	setStatus(row, 'Hotplugging...')
+	const result = await post('hotplug', { port: row.port }).catch(() => undefined)
+	button.disabled = false
+	if (result && result.ok) setStatus(row, 'Hotplugged', 'saved')
+	else setStatus(row, (result && result.reply.error) || 'Cannot reach Companion', 'problem')
 }
 const inputsUsing = (id) => rows.filter((row) => row.original.edid === id).map((row) => row.port)
 
