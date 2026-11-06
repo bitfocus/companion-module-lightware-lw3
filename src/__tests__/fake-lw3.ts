@@ -64,9 +64,13 @@ export class FakeLw3 {
 	readonly received: string[] = []
 	/** Stop answering, while staying connected */
 	silent = false
+	/** As a router with every connection in use: each new connection is closed straight away */
+	full = false
 	readonly #noRouting: boolean
 	readonly #clients = new Map<Socket, { buffer: string; subscribed: Set<string> }>()
 	#server: Server | undefined
+	/** Closed as soon as they connected, which the server still waits for when it closes */
+	readonly #turnedAway = new Set<Socket>()
 
 	constructor(options: FakeLw3Options = {}) {
 		const inputs = options.inputs ?? 8
@@ -104,8 +108,9 @@ export class FakeLw3 {
 	}
 
 	async close(): Promise<void> {
-		for (const socket of this.#clients.keys()) socket.destroy()
+		for (const socket of [...this.#clients.keys(), ...this.#turnedAway]) socket.destroy()
 		this.#clients.clear()
+		this.#turnedAway.clear()
 		await new Promise<void>((resolve) => {
 			if (this.#server) this.#server.close(() => resolve())
 			else resolve()
@@ -188,6 +193,14 @@ export class FakeLw3 {
 	}
 
 	#accept(socket: Socket): void {
+		// measured: a full router accepts and then closes, without a word
+		if (this.full) {
+			this.#turnedAway.add(socket)
+			socket.on('error', () => undefined)
+			socket.on('close', () => this.#turnedAway.delete(socket))
+			socket.end()
+			return
+		}
 		this.#clients.set(socket, { buffer: '', subscribed: new Set() })
 		socket.on('error', () => undefined)
 		socket.on('close', () => this.#clients.delete(socket))

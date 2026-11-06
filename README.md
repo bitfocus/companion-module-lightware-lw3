@@ -28,3 +28,12 @@ LW3 varies between models, so the module is built on what real routers do. Light
 `node tools/lw3-try.mjs ROUTER_IP` tests routing, locks and names on two outputs with no display. **This one changes the router.** It reports where it left things.
 
 Captures stay out of git because they can hold port names and stored EDIDs.
+
+## Firmware
+
+The module never updates firmware. Lightware's firmware is on each product's Downloads tab, but the website only lists it with `?page=1` in the address, for example:
+
+- [MX2-8x8-HDMI20-L](https://www.lightware.com/en/products/Matrix-Switchers/mx2-8x8-hdmi20-l?page=1#Downloads)
+- [MX2-8x8-HDMI20-Audio](https://www.lightware.com/en/products/Matrix-Switchers/mx2-8x8-hdmi20-audio?page=1#Downloads), now discontinued
+
+Without `?page=1`, the same tab shows no firmware.

@@ -47,6 +47,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(names):** new **Rename a port** action. Names changed elsewhere appear straight away and are logged.
 - **feat(presets):** presets use Companion 5 layered buttons with a plain fallback, a blank styled button, and every button lights up while held.
 - **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses. Lines carry the connection's label as their source, and status messages name Lightware.
+- **feat(connection):** when the router turns the module away because all its connections are in use, the log and status say so once, and the module keeps retrying.
 - **feat(connection):** a lost connection is noticed within about 6 seconds without pressing anything, and the module keeps retrying until the router returns.
 - **feat(tools):** `tools/lw3-capture.mjs` reads a router's whole LW3 tree without changing anything, and `yarn fake-router` runs a fake one.
 
@@ -66,7 +67,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - How many router presets the router can hold, and the longest name it allows. 46 characters was accepted.
 - Any router other than the MX2-8x8-HDMI20-L, any other firmware, and any other version of Companion.
 - Upgrading a v2 configuration.
-- How many WebSockets and subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
+- How many subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
+- The connection limit on other models.
 - The ports page's WebSocket against the fake router, which has none by design.
 - Whether the router announces a mute made from its front panel. Mutes made by command are announced.
 - Hotplugging an input from the module, rather than by command. The command was tested with a MacBook on Input 1.
@@ -82,3 +84,5 @@ Mute and hotplug, with a command line test: muting and unmuting inputs and outpu
 Router presets, with a command line test: creating, saving, copying, renaming and deleting, the forms each needs, the errors for a name in use and a missing preset, and which subscription hears each announcement. Writing a preset's routes directly, and loading one written that way, and the front-panel preset slots.
 
 Standby, with a command line test: entering and leaving it, its announcement, the refusal of routes, names, locks, mutes and HDCP while in it, and how long signals took to come back.
+
+Connections, on firmware 1.11.3b5, with the router on a cable to the test machine alone: 15 at once, TCP and WebSockets together. Any more were refused straight away and those already open kept working, the module's included. A WebSocket closed by the browser held its place for about 50 seconds.

@@ -1009,6 +1009,22 @@ describe('the module against the fake router', () => {
 		})
 	})
 
+	it('says once that a router closing every new connection may be full, and recovers when it has room', async () => {
+		fake.full = true
+		await module.init({ host: '127.0.0.1', port })
+		const refused = (): string[] => logged(module, 'warn').filter((line) => line.includes('closed the connection'))
+		await until(() => refused().length === 1)
+		expect(mock(module.updateStatus)).toHaveBeenCalledWith(
+			InstanceStatus.ConnectionFailure,
+			'Lightware router may be full, retrying',
+		)
+		await new Promise((resolve) => setTimeout(resolve, 3000))
+		expect(refused()).toHaveLength(1)
+		fake.full = false
+		await connected()
+		expect(logged(module, 'info').some((line) => line.startsWith('Reconnected'))).toBe(true)
+	}, 20_000)
+
 	it('tests a quiet connection, and reconnects when the router stops answering', async () => {
 		await module.init({ host: '127.0.0.1', port })
 		await connected()

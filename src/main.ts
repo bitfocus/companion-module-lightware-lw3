@@ -106,6 +106,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** Still on the first read after connecting, when everything is new and not worth logging */
 	#reading = false
 	#lostAt: number | undefined
+	/** Whether the router has said anything since this connection opened */
+	#heard = false
+	#connected = false
+	/** Said once per outage, so retrying doesn't repeat it */
+	#refusedSaid = false
 	/** Routes this module asked for, so that only changes from elsewhere are logged */
 	readonly #ownRoutes = new Map<number, number>()
 	/** Ports this module is renaming right now, for the same reason */
@@ -994,6 +999,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			if (socket !== this.#socket) return
 			this.updateStatus(status, message)
 			if (status !== InstanceStatus.Ok) {
+				if (this.#connected && !this.#heard) this.#refused()
+				this.#connected = false
 				this.#lostAt ??= Date.now()
 				this.#stopHeartbeat()
 				this.#client.reset()
@@ -1004,16 +1011,40 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		socket.on('connect', () => {
 			if (socket !== this.#socket) return
 			this.#stopConnectTimer()
-			if (this.#lostAt !== undefined) {
-				this.log('info', `Reconnected after ${Math.round((Date.now() - this.#lostAt) / 1000)} s`)
-				this.#lostAt = undefined
-			}
+			this.#connected = true
+			this.#heard = false
 			this.#client.reset()
 			void this.#readRouter()
 		})
 		socket.on('data', (data) => {
-			if (socket === this.#socket) this.#client.push(data)
+			if (socket !== this.#socket) return
+			if (!this.#heard) this.#firstHeard()
+			this.#client.push(data)
 		})
+	}
+
+	/** A full router accepts the connection and then closes it, so it only counts once the router answers */
+	#firstHeard(): void {
+		this.#heard = true
+		this.#refusedSaid = false
+		if (this.#lostAt !== undefined) {
+			this.log('info', `Reconnected after ${Math.round((Date.now() - this.#lostAt) / 1000)} s`)
+			this.#lostAt = undefined
+		}
+	}
+
+	/**
+	 * Measured: a router with all its connections in use accepts a new one and closes it about 5 ms later,
+	 * without a word. Its web interface, ports pages and anything else using LW3 share those connections.
+	 */
+	#refused(): void {
+		if (this.#refusedSaid) return
+		this.#refusedSaid = true
+		this.log(
+			'warn',
+			'The Lightware router closed the connection straight away. It may have all its connections in use (15 on an MX2-8x8-HDMI20-L), shared with its web interface, ports pages and other control systems. Retrying.',
+		)
+		this.updateStatus(InstanceStatus.ConnectionFailure, 'Lightware router may be full, retrying')
 	}
 
 	#disconnect(): void {
@@ -1023,6 +1054,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.#presetReadTimer = undefined
 		this.#ownRoutes.clear()
 		this.#reading = false
+		this.#connected = false
 		this.#socket?.destroy()
 		this.#socket = undefined
 		this.#client.reset()
