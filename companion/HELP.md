@@ -56,6 +56,7 @@ A save stores what is routed now. With routes staged, it stores what a take woul
 - **Overwrite a router preset** action: for a button of your own. There is no one-press preset for it, as the old routes are lost.
 - **Create a router preset** action: makes a new preset from the current routes. Names can use up to 46 letters, digits, `-` and `_`. The router allows more, but those would end up inside commands.
 - **Front-panel presets:** the router has preset buttons on its front panel, and the module has a button for each, under Router presets. Each shows the name of the preset it holds, or `EMPTY` with the name SAVE would give it, recalls it, and follows any change made on the router. Place them once, and a preset saved with SAVE and an input appears on them by itself.
+- **Tip:** for presets you'll keep on a surface, save them to front-panel preset buttons and place those. They keep up when a preset is renamed. A named router preset button doesn't, because to Companion a renamed preset is a new one, so it would need placing again.
 - **Ports page:** the Router presets table shows each preset's routes, and has Save, Rename, Copy and Delete for each, and a box to create one. Each asks first.
 
 ### Locked outputs
