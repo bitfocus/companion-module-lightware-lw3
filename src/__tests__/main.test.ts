@@ -890,7 +890,7 @@ describe('the module against the fake router', () => {
 		})
 
 		it('says in the settings which router it is connected to', async () => {
-			expect((module.getConfigFields()[0] as { value: string }).value).toContain('Not connected to a router.')
+			expect((module.getConfigFields()[0] as { value: string }).value).toBe('No router IP set.')
 			await module.init({ host: '127.0.0.1', port })
 			await connected()
 			expect((module.getConfigFields()[0] as { value: string }).value).toBe(
@@ -956,6 +956,13 @@ describe('the module against the fake router', () => {
 		await until(() => !module.state.presets.has('SHOW-B'))
 		await until(() => !Object.keys(lastPresets(module)).includes('preset_SHOW-B'))
 		expect(logged(module, 'info')).toContain('Router presets now: SHOW-A')
+	})
+
+	it('says in the settings it is still connecting, and where the details are live', async () => {
+		await module.init({ host: '127.0.0.1', port: 1 })
+		const text = (module.getConfigFields()[0] as { value: string }).value
+		expect(text).toContain('Connecting to 127.0.0.1.')
+		expect(text).toContain('/variables/connection/')
 	})
 
 	it('notices new firmware without the connection dropping, and reads the router again', async () => {

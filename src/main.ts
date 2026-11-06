@@ -169,9 +169,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** Companion asks for the settings each time they're opened, so this is current */
 	#routerSummary(): string {
 		const { model, firmware, routerName, inputCount, outputCount } = this.state
-		// Companion only asks when the settings open, so this can't follow a connection made after that
-		if (!this.#socket?.isConnected || !model)
-			return 'Not connected to a router. Close and reopen these settings to check again.'
+		// Companion asks when the settings open and as they're saved, while a new address is still connecting.
+		// A module can't update them after that, but the variables page is live.
+		const live = `[its variables](/variables/connection/${this.label})`
+		if (!this.config?.host) return 'No router IP set.'
+		if (!this.#socket?.isConnected || !model || this.#reading)
+			return `Connecting to ${this.config.host}. These settings can't update by themselves: close and reopen them, or see ${live}, which are live.`
 		// a line each. Markdown needs a backslash at the end of a line to keep its break.
 		return [
 			`Model: ${model}`,
