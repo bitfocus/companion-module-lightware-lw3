@@ -67,7 +67,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - How many routes one command can hold, which matters for a staged preset on a big router.
 - Whether the router announces a lock changed elsewhere.
 - How many router presets the router can hold, and the longest name it allows. 46 characters was accepted.
-- Any router other than the MX2-8x8-HDMI20-L, any other firmware, and any other version of Companion.
+- Any router other than the MX2-8x8-HDMI20-L and MX2-8X8-HDMI20-AUDIO, any firmware other than 1.10.1b4, and any version of Companion other than 5.1.1 and 5.1.2. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
+- The audio settings of the MX2-8X8-HDMI20-AUDIO, which the module leaves alone.
 - Upgrading a v2 configuration.
 - How many subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
 - The connection limit on other models.
@@ -76,6 +77,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - Hotplugging an input from the module, rather than by command. The command was tested with a MacBook on Input 1.
 
 ### Tested on hardware
+
+The MX2-8X8-HDMI20-AUDIO in Companion 5.1.2, with the built package: routing, TAKE, holding an input for every output, locks, mutes, hotplug, saving router and front-panel presets, and the ports page, including on a phone. A command line test of its spare ports matched the L's results for every LW3 command the module uses. Standby wasn't tried on it.
 
 In Companion 5.1.1, and again after moving to Node 26 on Companion 5.1.2 (routing, TAKE, status borders, the ports page and the built package): recalling router presets, the live preset feedback, toggling locks, the auto-route modes, staging router presets, staged clears, a route and a clear in one command, and a locked output staying staged while the rest of a preset is taken. The ports page was tried on spare ports: names including `( ) # %`, HDCP, setting an EDID, storing and deleting one, Revert, and paste.
 
