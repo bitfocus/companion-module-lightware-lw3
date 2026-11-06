@@ -87,6 +87,14 @@ describe('the module against the fake router', () => {
 		await fake.close()
 	})
 
+	it("draws every preset without Companion's top bar or status icons", async () => {
+		await module.init({ host: '' })
+		for (const preset of Object.values(lastPresets(module))) {
+			expect(preset.variants[0].canvas).toEqual({ decoration: 'none', showStatusIcons: 'none' })
+			expect(preset.variants[1].style.show_topbar).toBe(false)
+		}
+	})
+
 	it('shows a mute over being selected, and pressing over a mute, on port buttons', async () => {
 		await module.init({ host: '' })
 		const presets = lastPresets(module)

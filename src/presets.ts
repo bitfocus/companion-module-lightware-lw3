@@ -1,7 +1,9 @@
-import type {
-	CompanionButtonStepActions,
-	CompanionPresetDefinitions,
-	CompanionPresetSection,
+import {
+	ButtonGraphicsDecorationType,
+	ButtonGraphicsShowStatusIcons,
+	type CompanionButtonStepActions,
+	type CompanionPresetDefinitions,
+	type CompanionPresetSection,
 } from '@companion-module/base'
 import { BUTTON_PNG_BASE64 } from './button-image.js'
 import type { FeedbacksSchema } from './feedbacks.js'
@@ -134,6 +136,8 @@ function moduleButton(
 			{
 				type: 'layered',
 				name: spec.name,
+				// the house style: the button's own look, without Companion's top bar or status icons
+				canvas: { decoration: ButtonGraphicsDecorationType.None, showStatusIcons: ButtonGraphicsShowStatusIcons.None },
 				elements: [
 					{ type: 'box', id: 'box0', name: 'Background', x: 0, y: 0, width: 100, height: 100, color: spec.background },
 					{
@@ -174,6 +178,7 @@ function moduleButton(
 					color: 0x000000,
 					bgcolor: spec.background,
 					png64: BUTTON_PNG_BASE64,
+					show_topbar: false,
 				},
 				steps,
 				feedbacks: spec.feedbacks.map(({ background, shows: _shows, hides: _hides, fallbackText, ...feedback }) => ({
