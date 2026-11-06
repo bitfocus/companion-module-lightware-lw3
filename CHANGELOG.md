@@ -26,6 +26,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(routing):** new auto-route mode in the connection settings, and an **AUTO** button that steps off, stage, cut. It takes or stages as soon as an input and an output are both selected.
 - **feat(routing):** pressing an output lights the input on it, and pressing an input lights every output carrying it.
 - **feat(routing):** new **Stage** actions and buttons build a set of routes. The one **TAKE** button sends what is staged and any selected pair as one command, so the router changes them together. Leaving Stage discards anything staged, and the log lists it.
+- **feat(routing):** hold an input for a second to send it to every output, and a **Route an input to every output** action. Both follow the auto-route mode and leave locked outputs alone. Input buttons now select on release.
 - **feat(routing):** new **Unroute an output** action.
 - **feat(routing):** route changes made elsewhere, such as from the front panel or web interface, appear straight away and are logged. The module relies on the router's change messages and doesn't poll.
 - **feat(presets):** new **Router preset is live** feedback and `live_preset` variable show when the router's routes match a preset. Presets stored on the router get a button each.

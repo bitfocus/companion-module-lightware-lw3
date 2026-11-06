@@ -22,6 +22,10 @@ On the output button that shows its routed input, the selected input appears bel
 
 Press an output and the input on it lights up. Press an input and every output carrying it lights up.
 
+**Hold an input for a second to send it to every output.** With auto-route on Cut, every output changes straight away, in one command. On Off or Stage, they're staged, and TAKE sends them. Locked outputs are left as they are, and the log says which. So that a hold doesn't also select, input buttons select when you let go of a short press, rather than as you press. The **Route an input to every output** action does the same from a button of your own.
+
+Take care with a hold on Cut: it changes every display at once, and nothing on the button warns you.
+
 To change several routes together, set auto-route to Stage, press an input and then its outputs, and press a new input to start a new pair. TAKE changes to TAKE STAGED and flashes while routes are waiting, and sends them as one command so the router changes them together. Staged routes belong to the module, not the router, and are lost when the module restarts. A locked output keeps its staged route and the log says so.
 
 ### Auto-route

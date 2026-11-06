@@ -40,6 +40,9 @@ const LEGEND_BORDER_WIDTH = 3
 /** Companion's alpha is in the top byte, and this much of it is clear */
 const TRANSPARENT = 0xff000000
 
+/** Holding an input this long sends it to every output */
+const HOLD_MS = 1000
+
 /** Text starts large and shrinks to fit its layer */
 const FONT_SIZE = 100
 /** For text that changes while the button is in use, so its size doesn't jump */
@@ -112,6 +115,8 @@ interface ButtonSpec {
 	legendPort?: string
 	/** For a dark background: the text colour at rest, turning black whenever a feedback colours the button */
 	textColor?: number
+	/** Run once the button has been held for HOLD_MS. The press actions then run on a short press, at release. */
+	holdActions?: PresetActions
 }
 
 const legendBorder = {
@@ -141,7 +146,11 @@ const legendFeedbacks = (port: string | undefined) =>
 function moduleButton(
 	spec: ButtonSpec & { layers: ReturnType<typeof textLayer>[]; fallbackText: string },
 ): CompanionPresetDefinitions<ModuleSchema>[string] {
-	const steps = [{ down: spec.actions, up: [] }]
+	const steps: CompanionButtonStepActions<ModuleSchema>[] = [
+		spec.holdActions
+			? { down: [], up: spec.actions, [HOLD_MS]: { options: { runWhileHeld: true }, actions: spec.holdActions } }
+			: { down: spec.actions, up: [] },
+	]
 	return {
 		type: 'alternatives',
 		variants: [
@@ -326,6 +335,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			text: name,
 			legendPort: `I${input}`,
 			actions: [{ actionId: 'selectSource', options }],
+			holdActions: [{ actionId: 'routeToAll', options: { input: `I${input}` } }],
 			feedbacks: [
 				{ feedbackId: 'routedInput', options: { input: `I${input}` }, background: SELECTED_SRC },
 				{ feedbackId: 'sourceSelected', options: { port: input }, background: SELECTED_SRC },

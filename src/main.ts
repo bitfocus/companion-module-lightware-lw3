@@ -438,6 +438,36 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}
 	}
 
+	/**
+	 * Every output to one input, following the auto-route mode: Cut routes now, as one command, and
+	 * Off and Stage stage them for a take. Locked outputs are left out, and the log says which.
+	 */
+	async routeToAll(input: number | undefined): Promise<void> {
+		this.disarmSave()
+		if (input === undefined) return
+		const { state } = this
+		const outputs = Array.from({ length: state.outputCount }, (_, index) => index + 1)
+		const locked = outputs.filter((output) => state.isLocked(output))
+		const free = outputs.filter((output) => !state.isLocked(output) && state.routes.get(output) !== input)
+		if (locked.length > 0) {
+			this.log('warn', `${locked.map((output) => state.outputName(output)).join(', ')} locked, so left as they are`)
+		}
+		if (free.length === 0) {
+			this.log('info', `Every free output is already on ${state.inputName(input)}`)
+			return
+		}
+		if (this.autoRouteMode === 'cut') {
+			if (await this.#switch(free.map((output) => ({ input, output })))) {
+				this.log('info', `${state.inputName(input)} to every output`)
+			}
+			return
+		}
+		for (const output of free) state.staged.set(output, input)
+		state.stagedPreset = undefined
+		this.#stagedChanged()
+		this.log('info', `${state.inputName(input)} staged for every output: press TAKE to send`)
+	}
+
 	/** A route the router refuses keeps its selection, so nothing looks as if it happened */
 	async takeSelection(): Promise<void> {
 		const { selectedInput: input, selectedOutput: output } = this.state

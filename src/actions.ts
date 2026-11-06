@@ -20,6 +20,7 @@ export type ActionsSchema = {
 	selectDestination: { options: { port: string } }
 	take: { options: NoOptions }
 	takeSalvo: { options: NoOptions }
+	routeToAll: { options: { input: string } }
 	stageSelected: { options: NoOptions }
 	stageRoute: { options: { input: string; output: string } }
 	takeStaged: { options: NoOptions }
@@ -145,6 +146,13 @@ export function UpdateActions(self: ModuleInstance): void {
 			description: 'They are sent as one command, and the router changes them together.',
 			options: [],
 			callback: async () => self.take(),
+		},
+		routeToAll: {
+			name: 'Route an input to every output',
+			description:
+				'Follows the auto-route mode: with Cut every output changes now, in one command, and with Off or Stage they are staged for TAKE. Locked outputs are left as they are.',
+			options: [{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs }],
+			callback: async (action) => self.routeToAll(portNumber(action.options.input, 'I')),
 		},
 		takeSalvo: {
 			name: 'Take the selected input to the selected output only, and clear the selection',

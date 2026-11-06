@@ -308,6 +308,42 @@ describe('the module against the fake router', () => {
 		}, 30_000)
 	})
 
+	describe('an input to every output', () => {
+		it('routes it now with Cut, in one command, leaving locked outputs and those already on it', async () => {
+			await module.init({ host: '127.0.0.1', port, autoRoute: 'cut' })
+			await connected()
+			await module.lockOutput(8, 'lockDestination')
+			await until(() => module.state.isLocked(8))
+			await module.routeToAll(2)
+			expect(writes()).toEqual([
+				'CALL /MEDIA/XP/VIDEO:lockDestination(O8)',
+				'CALL /MEDIA/XP/VIDEO:switch(I2:O1;I2:O4;I2:O5;I2:O7)',
+			])
+			expect(logged(module, 'warn')).toContain('Output 8 locked, so left as they are')
+		})
+
+		it('stages it for TAKE with Off or Stage', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await module.routeToAll(3)
+			expect(writes()).toEqual([])
+			expect(module.state.stagedRoutes()).toHaveLength(8)
+			await module.take()
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:switch(I3:O1;I3:O2;I3:O3;I3:O4;I3:O5;I3:O6;I3:O7;I3:O8)'])
+		})
+
+		it('selects an input on a short press and sends it to every output on a hold', async () => {
+			await module.init({ host: '' })
+			const [step] = lastPresets(module).input_2.variants[0].steps
+			expect(step.down).toEqual([])
+			expect(step.up).toEqual([{ actionId: 'selectSource', options: { port: 'I2' } }])
+			expect(step[1000]).toEqual({
+				options: { runWhileHeld: true },
+				actions: [{ actionId: 'routeToAll', options: { input: 'I2' } }],
+			})
+		})
+	})
+
 	it('flashes the next input, and clears the selection once the take is accepted', async () => {
 		await module.init({ host: '127.0.0.1', port })
 		await connected()
