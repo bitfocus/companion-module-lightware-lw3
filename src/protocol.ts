@@ -85,6 +85,16 @@ export const Cmd = {
 	copyPreset: (from: string, to: string): string => `CALL ${PRESETS}:copy(${from},${to})`,
 	renamePreset: (from: string, to: string): string => `CALL ${PRESETS}:rename(${from},${to})`,
 	deletePreset: (name: string): string => `CALL ${PRESETS}:delete(${name})`,
+	/**
+	 * Measured: writes a preset's routes without routing anything, one entry per output and a trailing
+	 * semicolon, in the form the router itself uses. A preset written this way loads normally.
+	 */
+	writePreset: (name: string, inputs: number[]): string =>
+		`SET ${PRESETS}/${name}.VideoDestination=${inputs.map((input) => (input === 0 ? 'u0' : `uI${input}`)).join(';')};`,
+	/** The front panel's preset buttons, as `Button1AssignedPreset=NAME` */
+	slots: `GET ${PRESETS}.*`,
+	/** What the front panel does: makes preset ButtonN from the current routes and gives it to slot N */
+	createSlotPreset: (slot: number): string => `CALL ${PRESETS}:createButtonAssignedPreset(${slot},VIDEO)`,
 	/** Several routes in one command change together, in a single change message */
 	switch: (routes: Route[]): string => `CALL ${XP}:switch(${routes.map(routeText).join(';')})`,
 	lock: (output: number): string => `CALL ${XP}:lockDestination(O${output})`,
@@ -320,4 +330,10 @@ export function parsePresetNames(lines: string[]): string[] {
 		if (match) names.push(match[1])
 	}
 	return names
+}
+
+/** `Button3AssignedPreset` to 3 */
+export function parseSlot(property: string): number | undefined {
+	const match = /^Button(\d+)AssignedPreset$/.exec(property)
+	return match ? Number(match[1]) : undefined
 }

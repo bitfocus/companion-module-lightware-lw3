@@ -8,6 +8,7 @@ export const nameVar = (port: string): string => `name_${port}`
 export const sourceVar = (output: number): string => `source_O${output}`
 export const sourceNameVar = (output: number): string => `sourcename_O${output}`
 export const stagedNameVar = (output: number): string => `stagedname_O${output}`
+export const slotVar = (slot: number): string => `preset_slot_${slot}`
 
 export function UpdateVariableDefinitions(
 	setDefinitions: (definitions: CompanionVariableDefinitions<VariablesSchema>) => void,
@@ -30,6 +31,11 @@ export function UpdateVariableDefinitions(
 	}
 	for (let input = 1; input <= state.shownInputs; input++) {
 		definitions[nameVar(`I${input}`)] = { name: `Name of input ${input}` }
+	}
+	for (const slot of state.slots.keys()) {
+		definitions[slotVar(slot)] = {
+			name: `Router preset on front-panel preset ${slot}, or EMPTY and the name SAVE would give it`,
+		}
 	}
 	for (let output = 1; output <= state.shownOutputs; output++) {
 		definitions[nameVar(`O${output}`)] = { name: `Name of output ${output}` }
@@ -78,4 +84,11 @@ function muteText(state: RouterState): string {
 	const port = state.lastSelectedPort
 	if (port === undefined) return '[UN]MUTE\nIN/OUT'
 	return `${state.isMuted(port) ? 'UNMUTE' : 'MUTE'}\n${state.portName(port)}`
+}
+
+export function slotValues(state: RouterState): VariablesSchema {
+	const values: VariablesSchema = {}
+	// an empty one says what SAVE would call the preset it makes there
+	for (const slot of state.slots.keys()) values[slotVar(slot)] = state.slotPreset(slot) ?? `EMPTY\nButton${slot}`
+	return values
 }

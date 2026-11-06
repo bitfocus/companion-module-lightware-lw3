@@ -45,6 +45,7 @@ import {
 	parsePortStatus,
 	parsePresetNames,
 	parsePresetSource,
+	parseSlot,
 	parseProperty,
 	parseSource,
 	replyError,
@@ -61,6 +62,7 @@ import {
 	portNameValues,
 	routeValues,
 	selectionValues,
+	slotValues,
 	type VariablesSchema,
 } from './variables.js'
 
@@ -77,7 +79,8 @@ export { UpgradeScripts }
 const XP_PATH = '/MEDIA/XP/VIDEO'
 const NAMES_PATH = '/MEDIA/NAMES/VIDEO'
 const UID_PATH = '/MANAGEMENT/UID'
-const PRESET_PATH_PREFIX = '/MEDIA/PRESET/'
+const PRESET_PATH = '/MEDIA/PRESET'
+const PRESET_PATH_PREFIX = `${PRESET_PATH}/`
 const DEFINITIONS_DEBOUNCE_MS = 100
 /** Saving a preset could announce several changes, which only need reading once */
 const PRESET_READ_DEBOUNCE_MS = 200
@@ -154,7 +157,21 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	getConfigFields(): SomeCompanionConfigField[] {
-		return GetConfigFields(this.label)
+		return GetConfigFields(this.label, this.#routerSummary())
+	}
+
+	/** Companion asks for the settings each time they're opened, so this is current */
+	#routerSummary(): string {
+		const { model, firmware, routerName, inputCount, outputCount } = this.state
+		if (!this.#socket?.isConnected || !model) return 'Not connected to a router.'
+		// a line each. Markdown needs a backslash at the end of a line to keep its break.
+		return [
+			`Model: ${model}`,
+			`Name: ${routerName || 'none'}`,
+			`Firmware: ${firmware || 'unknown'}`,
+			`Inputs: ${inputCount}`,
+			`Outputs: ${outputCount}`,
+		].join('\\\n')
 	}
 
 	async handleHttpRequest(request: CompanionHTTPRequest): Promise<CompanionHTTPResponse> {
@@ -170,7 +187,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			hotplug: async (port: string) => this.hotplug(port as PortId),
 			outputsFedBy: (input: number) => this.outputsFedBy(input),
 			presets: () =>
-				[...this.state.presets].map(([name, routes]) => ({ name, routes, live: this.state.isPresetLive(name) })),
+				[...this.state.presets].map(([name, routes]) => ({
+					name,
+					routes,
+					live: this.state.isPresetLive(name),
+					slots: [...this.state.slots].filter(([, held]) => held === name).map(([slot]) => slot),
+				})),
 			// read straight away, so the reply has the result in it
 			savePreset: async (name: string) => this.#afterPresetCommand(await this.savePreset(name)),
 			createPreset: async (name: string) => this.#afterPresetCommand(await this.createPreset(name)),
@@ -307,6 +329,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	// ---- actions ----------------------------------------------------------------------------
 
 	selectInput(input: number | undefined): void {
+		if (this.state.saveArmed && input !== undefined) {
+			// as on the front panel: SAVE, then an input, saves to that preset button
+			this.disarmSave()
+			void this.saveToSlot(input)
+			return
+		}
 		this.disarmSave()
 		if (input === undefined) return
 		this.state.selectInput(input)
@@ -595,7 +623,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#saveArmChanged(): void {
 		this.#stopFlash()
 		this.#syncFlash()
-		this.checkFeedbacks('saveArmed')
+		this.checkFeedbacks('saveArmed', 'saveSlotArmed')
 	}
 
 	/** Stores what is routed now. Staged routes aren't routed yet, so they aren't saved. */
@@ -604,16 +632,62 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.log('warn', `There is no router preset called "${name}" to overwrite`)
 			return `No router preset called ${name}`
 		}
-		const error = await this.#presetCommand(Cmd.savePreset(name), `overwrite router preset ${name}`)
-		if (error) return error
 		const staged = this.state.stagedRoutes().length
-		this.log(
-			'info',
-			`Router preset ${name} overwritten with the current routes${staged ? `, without the ${staged} staged` : ''}`,
+		// the router can only save what is routed, so with routes staged the preset is written directly
+		const error = await this.#presetCommand(
+			staged ? Cmd.writePreset(name, this.state.takeResult()) : Cmd.savePreset(name),
+			`overwrite router preset ${name}`,
 		)
+		if (error) return error
+		this.log('info', `Router preset ${name} overwritten with ${this.#savedWhat(staged)}`)
 		// the router only announces a save that changed something, which a read covers either way
 		this.#presetsChanged()
 		return undefined
+	}
+
+	#savedWhat(staged: number): string {
+		if (staged === 0) return 'the current routes'
+		return `what a take would leave, including ${staged} staged route${staged === 1 ? '' : 's'}`
+	}
+
+	/** As the front panel does it: an empty slot gets a new preset called ButtonN */
+	async saveToSlot(slot: number): Promise<string | undefined> {
+		if (!this.state.slots.has(slot)) {
+			this.log('warn', `The router has no front-panel preset ${slot}`)
+			return `No front-panel preset ${slot}`
+		}
+		const existing = this.state.slotPreset(slot)
+		if (existing) return this.savePreset(existing)
+		const name = `Button${slot}`
+		if (this.state.presets.has(name)) {
+			this.log('warn', `Front-panel preset ${slot} is empty, but a router preset called ${name} already exists`)
+			return `${name} already exists`
+		}
+		const error = await this.#presetCommand(Cmd.createSlotPreset(slot), `create front-panel preset ${slot}`)
+		if (error) return error
+		const staged = this.state.stagedRoutes().length
+		if (staged) {
+			const written = await this.#presetCommand(Cmd.writePreset(name, this.state.takeResult()), `write ${name}`)
+			if (written) return written
+		}
+		this.log('info', `Front-panel preset ${slot} saved as ${name}, with ${this.#savedWhat(staged)}`)
+		this.#presetsChanged()
+		return undefined
+	}
+
+	/** A slot button: recalls what the slot holds, or with SAVE armed, saves into it */
+	async recallSlot(slot: number): Promise<void> {
+		if (this.state.saveArmed) {
+			this.disarmSave()
+			await this.saveToSlot(slot)
+			return
+		}
+		const name = this.state.slotPreset(slot)
+		if (!name) {
+			this.log('warn', `Front-panel preset ${slot} is empty`)
+			return
+		}
+		await this.recallPreset(name)
 	}
 
 	async createPreset(name: string): Promise<string | undefined> {
@@ -627,8 +701,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return `${clean} already exists`
 		}
 		const error = await this.#presetCommand(Cmd.createPreset(clean), `create router preset ${clean}`)
-		if (!error) this.log('info', `Router preset ${clean} created from the current routes`)
-		return error
+		if (error) return error
+		const staged = this.state.stagedRoutes().length
+		if (staged) {
+			const written = await this.#presetCommand(Cmd.writePreset(clean, this.state.takeResult()), `write ${clean}`)
+			if (written) return written
+		}
+		this.log('info', `Router preset ${clean} created with ${this.#savedWhat(staged)}`)
+		return undefined
 	}
 
 	/** For the ports page */
@@ -1038,6 +1118,30 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}
 		// a read that finds nothing new must not touch the buttons
 		if (!sameContents) this.#presetContentsChanged()
+		await this.#readSlots()
+	}
+
+	/** The front panel's preset buttons, which the slot buttons follow */
+	async #readSlots(): Promise<void> {
+		const lines = await this.#client.request(Cmd.slots)
+		if (lines === undefined || replyError(lines)) return
+		const before = this.state.slots.size
+		for (const line of lines) {
+			const property = parseProperty(line)
+			const slot = property && parseSlot(property.property)
+			if (slot) this.state.slots.set(slot, unescapeValue(property.value))
+		}
+		if (this.state.slots.size !== before) {
+			this.#presetsDirty = true
+			this.#publishVariableDefinitions()
+			this.#scheduleDefinitions()
+		}
+		this.#slotsChanged()
+	}
+
+	#slotsChanged(): void {
+		this.setVariableValues(slotValues(this.state))
+		this.checkFeedbacks('slotLive', 'slotStaged', 'slotEmpty')
 	}
 
 	// ---- incoming ---------------------------------------------------------------------------
@@ -1071,6 +1175,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.#applyName(property.property, property.value)
 		} else if (property.path.startsWith(PRESET_PATH_PREFIX)) {
 			this.#presetsChanged()
+		} else if (property.path === PRESET_PATH && parseSlot(property.property)) {
+			const slot = parseSlot(property.property) as number
+			const name = unescapeValue(property.value)
+			if (this.state.slots.get(slot) === name) return
+			this.state.slots.set(slot, name)
+			if (!this.#reading) this.log('info', `Front-panel preset ${slot} is now ${name || 'empty'}`)
+			this.#slotsChanged()
 		}
 	}
 
@@ -1139,6 +1250,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			'stagedWaiting',
 			'presetLive',
 			'presetStaged',
+			'slotLive',
+			'slotStaged',
 		)
 	}
 
@@ -1256,12 +1369,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#stagedChanged(): void {
 		this.setVariableValues(routeValues(this.state))
 		this.#syncFlash()
-		this.checkFeedbacks('outputStaged', 'stagedWaiting', 'stagedRoutes', 'presetStaged')
+		this.checkFeedbacks('outputStaged', 'stagedWaiting', 'stagedRoutes', 'presetStaged', 'slotStaged')
 	}
 
 	#presetContentsChanged(): void {
-		this.setVariableValues({ live_preset: this.state.livePreset ?? 'None' })
-		this.checkFeedbacks('presetLive')
+		this.setVariableValues({ live_preset: this.state.livePreset ?? 'None', ...slotValues(this.state) })
+		this.checkFeedbacks('presetLive', 'slotLive', 'slotEmpty')
 	}
 
 	/** The flash only runs while there is something to flash */
@@ -1270,12 +1383,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (state.nextInput === undefined && !state.hasStagedRoutes && !state.saveArmed) {
 			if (!this.#flashTimer) return
 			this.#stopFlash()
-			this.checkFeedbacks('sourceSelected', 'stagedWaiting', 'saveArmed')
+			this.checkFeedbacks('sourceSelected', 'stagedWaiting', 'saveArmed', 'saveSlotArmed')
 			return
 		}
 		this.#flashTimer ??= setInterval(() => {
 			state.flashOn = !state.flashOn
-			this.checkFeedbacks('sourceSelected', 'stagedWaiting', 'saveArmed')
+			this.checkFeedbacks('sourceSelected', 'stagedWaiting', 'saveArmed', 'saveSlotArmed')
 		}, FLASH_MS)
 	}
 

@@ -10,7 +10,7 @@ import type { FeedbacksSchema } from './feedbacks.js'
 import type ModuleInstance from './main.js'
 import type { ModuleSchema } from './main.js'
 import { HOTPLUG_DEFAULT_SECONDS } from './protocol.js'
-import { nameVar, sourceNameVar, stagedNameVar } from './variables.js'
+import { nameVar, slotVar, sourceNameVar, stagedNameVar } from './variables.js'
 
 // Companion swaps this for the connection's label wherever it appears in preset text
 const VAR = '$(lightware-lw3:'
@@ -26,6 +26,8 @@ const SELECTED_SRC = 0x00ff00
 const STAGED = 0xff8000
 const LOCKED = 0xff0000
 const MUTED = 0x0050ff
+/** Router presets and front-panel presets at rest. Bright enough for black text, unlike the dark purple tried first. */
+const PRESET = 0xff00ff
 /** The router web interface's port legend. Not connected has no border, as that says enough. */
 const LEGEND: [string, number][] = [
 	['connected', 0xfffb00],
@@ -60,7 +62,15 @@ const STACK = {
 	staged: { x: 5, y: 65, width: 90, height: 30 },
 }
 
-const textLayer = (id: string, name: string, text: string, bounds: Bounds, enabled = true, fontsize = FONT_SIZE) =>
+const textLayer = (
+	id: string,
+	name: string,
+	text: string,
+	bounds: Bounds,
+	enabled = true,
+	fontsize = FONT_SIZE,
+	color = 0x000000,
+) =>
 	({
 		type: 'text',
 		id,
@@ -68,7 +78,7 @@ const textLayer = (id: string, name: string, text: string, bounds: Bounds, enabl
 		enabled,
 		...bounds,
 		text,
-		color: 0x000000,
+		color,
 		halign: 'center',
 		valign: 'center',
 		fontsize,
@@ -100,6 +110,8 @@ interface ButtonSpec {
 	feedbacks: PresetFeedback[]
 	/** A port to show the status of, as a coloured border on the layered button */
 	legendPort?: string
+	/** For a dark background: the text colour at rest, turning black whenever a feedback colours the button */
+	textColor?: number
 }
 
 const legendBorder = {
@@ -162,6 +174,9 @@ function moduleButton(
 							...(background === undefined
 								? []
 								: [{ elementId: 'box0', elementProperty: 'color', override: background }]),
+							...(background === undefined || spec.textColor === undefined
+								? []
+								: spec.layers.map(({ id }) => ({ elementId: id, elementProperty: 'color', override: 0x000000 }))),
 							...(shows ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: true })),
 							...(hides ?? []).map((elementId) => ({ elementId, elementProperty: 'enabled', override: false })),
 						],
@@ -175,7 +190,7 @@ function moduleButton(
 				style: {
 					text: spec.fallbackText,
 					size: 'auto',
-					color: 0x000000,
+					color: spec.textColor ?? 0x000000,
 					bgcolor: spec.background,
 					png64: BUTTON_PNG_BASE64,
 					show_topbar: false,
@@ -197,7 +212,7 @@ function moduleButton(
 const textButton = (spec: ButtonSpec & { text: string; fontsize?: number }) =>
 	moduleButton({
 		...spec,
-		layers: [textLayer('text', 'text', spec.text, FULL, true, spec.fontsize)],
+		layers: [textLayer('text', 'text', spec.text, FULL, true, spec.fontsize, spec.textColor)],
 		fallbackText: spec.text,
 	})
 
@@ -316,6 +331,8 @@ export function UpdatePresets(self: ModuleInstance): void {
 				{ feedbackId: 'sourceSelected', options: { port: input }, background: SELECTED_SRC },
 				// above selected, so a muted port always shows it, and below pressed, which lights while held
 				{ feedbackId: 'portMuted', options: { port: `I${input}` }, background: MUTED },
+				// with SAVE waiting, an input saves to its front-panel preset, so it flashes like the presets
+				{ feedbackId: 'saveSlotArmed', options: { slot: input }, background: LOCKED },
 				{ feedbackId: PUSHED, options: {}, background: SELECTED_SRC },
 			],
 		})
@@ -385,13 +402,32 @@ export function UpdatePresets(self: ModuleInstance): void {
 		presetIds.push(id)
 		presets[id] = textButton({
 			name: `Recall router preset ${preset}, or stage it if the auto-route mode is Stage`,
-			background: CONTROL,
+			background: PRESET,
 			text: preset,
 			actions: [{ actionId: 'preset', options: { preset } }],
 			feedbacks: [
 				{ feedbackId: 'presetLive', options: { preset }, background: SELECTED_SRC },
 				{ feedbackId: 'presetStaged', options: { preset }, background: STAGED },
 				// every preset flashes while SAVE waits, as any of them could be overwritten
+				{ feedbackId: 'saveArmed', options: {}, background: LOCKED },
+				controlPushed,
+			],
+		})
+	}
+
+	const slotIds: string[] = []
+	for (const slot of state.slots.keys()) {
+		const id = `slot_${slot}`
+		slotIds.push(id)
+		presets[id] = textButton({
+			name: `Front-panel preset ${slot}: shows and recalls whatever preset the router has on it`,
+			background: PRESET,
+			text: `${VAR}${slotVar(slot)})`,
+			fontsize: CHANGING_TEXT_FONT_SIZE,
+			actions: [{ actionId: 'recallSlot', options: { slot } }],
+			feedbacks: [
+				{ feedbackId: 'slotLive', options: { slot }, background: SELECTED_SRC },
+				{ feedbackId: 'slotStaged', options: { slot }, background: STAGED },
 				{ feedbackId: 'saveArmed', options: {}, background: LOCKED },
 				controlPushed,
 			],
@@ -414,7 +450,10 @@ export function UpdatePresets(self: ModuleInstance): void {
 		{
 			id: 'router_presets',
 			name: 'Router presets',
-			definitions: [{ id: 'router_presets', type: 'simple', name: 'Router presets', presets: ['save', ...presetIds] }],
+			definitions: [
+				{ id: 'router_presets', type: 'simple', name: 'Router presets', presets: ['save', ...presetIds] },
+				{ id: 'slots', type: 'simple', name: "The router's front-panel preset buttons", presets: slotIds },
+			],
 		},
 		{
 			id: 'outputs',

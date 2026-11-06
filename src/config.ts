@@ -17,15 +17,14 @@ export const AUTO_ROUTE_ORDER: AutoRouteMode[] = ['off', 'stage', 'cut']
 
 export const AUTO_ROUTE_LABELS: Record<AutoRouteMode, string> = { off: 'OFF', stage: 'STAGE', cut: 'CUT' }
 
-export function GetConfigFields(label: string): SomeCompanionConfigField[] {
+export function GetConfigFields(label: string, router: string): SomeCompanionConfigField[] {
 	return [
 		{
 			type: 'static-text',
-			id: 'info',
+			id: 'router',
 			width: 12,
-			label: 'Information',
-			value:
-				'Connects to a Lightware matrix router over LW3. Only the MX2-8x8-HDMI20-L has been tested so far. See the help for what that means for other models.',
+			label: 'Router',
+			value: router,
 		},
 		{
 			type: 'textinput',
@@ -52,6 +51,14 @@ export function GetConfigFields(label: string): SomeCompanionConfigField[] {
 			width: 12,
 			label: 'Port names, EDID and HDCP',
 			value: `To edit many ports at once, [open the ports page](/instance/${label}/).`,
+		},
+		{
+			type: 'static-text',
+			id: 'info',
+			width: 12,
+			label: 'Information',
+			value:
+				'Connects to a Lightware matrix router over LW3. Only the MX2-8x8-HDMI20-L has been tested so far. See the help for what that means for other models.',
 		},
 	]
 }

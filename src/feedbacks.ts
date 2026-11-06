@@ -21,6 +21,10 @@ export type FeedbacksSchema = {
 	presetStaged: { type: 'boolean'; options: { preset: string } }
 	portMuted: { type: 'boolean'; options: { port: string } }
 	saveArmed: { type: 'boolean'; options: Record<string, never> }
+	saveSlotArmed: { type: 'boolean'; options: { slot: number } }
+	slotLive: { type: 'boolean'; options: { slot: number } }
+	slotStaged: { type: 'boolean'; options: { slot: number } }
+	slotEmpty: { type: 'boolean'; options: { slot: number } }
 	hotplugging: { type: 'boolean'; options: { port: string } }
 }
 
@@ -30,6 +34,14 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 	const outputs = outputChoices(state)
 	const ports = portChoices(state)
 	const presets = presetChoices(state)
+	const slotOption = {
+		type: 'number' as const,
+		id: 'slot' as const,
+		label: 'Front-panel preset',
+		default: 1,
+		min: 1,
+		max: 64,
+	}
 
 	const portStatus = (port: unknown) => {
 		const input = portNumber(port, 'I')
@@ -206,6 +218,44 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0x008000, color: 0xffffff },
 			options: [{ type: 'dropdown', id: 'port', label: 'Port', default: 'O1', choices: ports }],
 			callback: (feedback) => portStatus(feedback.options.port)?.connected === true,
+		},
+		slotLive: {
+			type: 'boolean',
+			name: 'Front-panel preset is live',
+			description: "True if the router's routes are the same as the preset on this front-panel preset button",
+			defaultStyle: { bgcolor: 0x00ff00, color: 0x000000 },
+			options: [slotOption],
+			callback: (feedback) => {
+				const name = state.slotPreset(Number(feedback.options.slot))
+				return name !== undefined && state.isPresetLive(name)
+			},
+		},
+		slotStaged: {
+			type: 'boolean',
+			name: 'Front-panel preset is staged',
+			description: "True while this front-panel preset's routes are staged and a take would change something",
+			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
+			options: [slotOption],
+			callback: (feedback) => {
+				const name = state.slotPreset(Number(feedback.options.slot))
+				return name !== undefined && state.isPresetStaged(name)
+			},
+		},
+		slotEmpty: {
+			type: 'boolean',
+			name: 'Front-panel preset is empty',
+			description: 'True while this front-panel preset button holds no preset',
+			defaultStyle: { color: 0x808080 },
+			options: [slotOption],
+			callback: (feedback) => state.slotPreset(Number(feedback.options.slot)) === undefined,
+		},
+		saveSlotArmed: {
+			type: 'boolean',
+			name: 'Save waiting, and this front-panel preset can take it',
+			description: 'Flashes after SAVE is pressed, on inputs the router has a front-panel preset for',
+			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
+			options: [slotOption],
+			callback: (feedback) => state.saveArmed && state.flashOn && state.slots.has(Number(feedback.options.slot)),
 		},
 		saveArmed: {
 			type: 'boolean',

@@ -833,7 +833,7 @@ describe('the module against the fake router', () => {
 			module.armSave()
 			expect(module.state.saveArmed).toBe(false)
 			module.armSave()
-			module.selectInput(3)
+			module.selectOutput(3)
 			expect(module.state.saveArmed).toBe(false)
 			vi.useFakeTimers()
 			try {
@@ -845,6 +845,56 @@ describe('the module against the fake router', () => {
 			}
 			await module.recallPreset('SHOW-B')
 			expect(writes()).toEqual(['CALL /MEDIA/PRESET/SHOW-B:load()'])
+		})
+
+		it('saves to a front-panel preset after SAVE then an input, making ButtonN when it is empty', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await until(() => variable(module, 'preset_slot_3') === 'EMPTY\nButton3')
+			module.armSave()
+			module.selectInput(3)
+			await until(() => variable(module, 'preset_slot_3') === 'Button3')
+			expect(module.state.selectedInput).toBeUndefined()
+			expect(writes()).toEqual(['CALL /MEDIA/PRESET:createButtonAssignedPreset(3,VIDEO)'])
+			// a second time, the preset it holds is overwritten
+			module.armSave()
+			await module.recallSlot(3)
+			expect(writes()).toContain('CALL /MEDIA/PRESET/Button3:save()')
+		})
+
+		it('follows a front-panel preset changed elsewhere, and recalls whatever it holds', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			fake.slots[0] = 'SHOW-B'
+			fake.announceSlot(1)
+			await until(() => variable(module, 'preset_slot_1') === 'SHOW-B')
+			expect(logged(module, 'info')).toContain('Front-panel preset 1 is now SHOW-B')
+			await module.recallSlot(1)
+			expect(writes()).toEqual(['CALL /MEDIA/PRESET/SHOW-B:load()'])
+			await module.recallSlot(2)
+			expect(logged(module, 'warn')).toContain('Front-panel preset 2 is empty')
+		})
+
+		it('saves what a take would leave when routes are staged, without routing anything', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			module.stage(3, 5)
+			module.armSave()
+			await module.recallPreset('SHOW-B')
+			expect(writes()).toEqual(['SET /MEDIA/PRESET/SHOW-B.VideoDestination=uI1;uI2;uI2;uI1;uI3;uI2;u0;uI2;'])
+			expect(module.state.routes.get(5)).toBe(0)
+			expect(logged(module, 'info')).toContain(
+				'Router preset SHOW-B overwritten with what a take would leave, including 1 staged route',
+			)
+		})
+
+		it('says in the settings which router it is connected to', async () => {
+			expect((module.getConfigFields()[0] as { value: string }).value).toBe('Not connected to a router.')
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			expect((module.getConfigFields()[0] as { value: string }).value).toBe(
+				'Model: MX2-8x8-HDMI20-L\\\nName: MX2-8x8-HDMI20-L\\\nFirmware: 1.10.1b4\\\nInputs: 8\\\nOutputs: 8',
+			)
 		})
 
 		it('creates a preset from the current routes, refusing a name in use or one unsafe in a command', async () => {
@@ -949,7 +999,7 @@ describe('the module against the fake router', () => {
 		const presets = lastPresets(module)
 		const feedbackIds = Object.keys(lastCall(module.setFeedbackDefinitions))
 		const actionIds = Object.keys(lastCall(module.setActionDefinitions))
-		expect(Object.keys(presets)).toHaveLength(9 + 2 + 8 * 2 + 8)
+		expect(Object.keys(presets)).toHaveLength(9 + 2 + 8 * 2 + 8 + 8)
 		for (const [id, preset] of Object.entries(presets)) {
 			for (const variant of preset.variants) {
 				const used: string[] = variant.feedbacks.map((feedback: { feedbackId: string }) => feedback.feedbackId)

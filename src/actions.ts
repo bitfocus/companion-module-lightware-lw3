@@ -14,6 +14,7 @@ export type ActionsSchema = {
 	savePreset: { options: { preset: string } }
 	createPreset: { options: { name: string } }
 	armSave: { options: NoOptions }
+	recallSlot: { options: { slot: number } }
 	selectSource: { options: { port: string } }
 	selectDestination: { options: { port: string } }
 	take: { options: NoOptions }
@@ -113,10 +114,17 @@ export function UpdateActions(self: ModuleInstance): void {
 				await self.createPreset(String(action.options.name))
 			},
 		},
+		recallSlot: {
+			name: 'Recall a front-panel preset',
+			description:
+				"Recalls the router preset on one of the router's front-panel preset buttons, or stages it with auto-route on Stage. With SAVE waiting, saves into it instead, making a new preset if it is empty.",
+			options: [{ type: 'number', id: 'slot', label: 'Front-panel preset', default: 1, min: 1, max: 64 }],
+			callback: async (action) => self.recallSlot(Number(action.options.slot)),
+		},
 		armSave: {
 			name: 'Save: the next router preset pressed is overwritten',
 			description:
-				'Press it, then press a router preset button within 5 seconds to overwrite that preset with the current routes. Pressing it again, or anything else, cancels.',
+				'Press it, then within 5 seconds press a router preset to overwrite it, or an input to save to that front-panel preset. With routes staged, what a take would leave is saved. Pressing it again, or anything else, cancels.',
 			options: [],
 			callback: () => self.armSave(),
 		},

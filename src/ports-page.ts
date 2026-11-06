@@ -66,6 +66,8 @@ export interface PresetRow {
 	/** The input for each output, 0 for none */
 	routes: (number | undefined)[]
 	live: boolean
+	/** The front-panel preset buttons it is on */
+	slots: number[]
 }
 
 export const INPUT_HDCP = ['0', '2', '3']
@@ -278,6 +280,11 @@ th.port { width: 3.5em; font-weight: 500; }
 th:nth-child(2) { width: 28%; }
 td.status { width: 22%; }
 td.buttons { white-space: nowrap; }
+details.region > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.region > summary::-webkit-details-marker { display: none; }
+details.region > summary::before { content: '▸'; display: inline-block; transition: transform 0.15s; }
+details.region[open] > summary::before { transform: rotate(90deg); }
+details.region > summary h2 { display: inline; margin: 16px 0 8px; }
 #presets th.port { white-space: nowrap; }
 td.buttons button { margin: 2px; }
 input, select { font: inherit; width: 100%; padding: 2px 4px; max-width: 100%; }
@@ -316,7 +323,7 @@ dialog .warn { color: var(--bad); }
 </header>
 <main>
 <div id="router-row"></div>
-<h2>Inputs</h2>
+<details class="region" id="region-inputs" open><summary><h2>Inputs</h2></summary>
 <div class="filter">
 <input id="edid-filter" type="search" placeholder="Filter EDIDs, such as 3840 p60" aria-label="Filter the EDID lists">
 <span id="edid-count" class="note"></span>
@@ -327,12 +334,14 @@ dialog .warn { color: var(--bad); }
 <th>HDCP<br><select id="all-input-hdcp" aria-label="Set every input's HDCP"></select></th>
 <th></th><th></th></tr></thead><tbody></tbody></table></div>
 <p class="note">An orange EDID is dynamic: it follows whatever display was last on that output, so it can change by itself.</p>
-<h2>Outputs</h2>
+</details>
+<details class="region" id="region-outputs" open><summary><h2>Outputs</h2></summary>
 <div class="scroll"><table id="outputs"><thead><tr>
 <th>Port</th><th>Name</th>
 <th>HDCP<br><select id="all-output-hdcp" aria-label="Set every output's HDCP"></select></th>
 <th></th><th></th></tr></thead><tbody></tbody></table></div>
-<h2>Router presets</h2>
+</details>
+<details class="region" id="region-presets" open><summary><h2>Router presets</h2></summary>
 <div class="scroll"><table id="presets"><thead><tr>
 <th>Name</th><th>Routes (output: input)</th><th></th></tr></thead><tbody></tbody></table></div>
 <div class="store">
@@ -340,7 +349,8 @@ dialog .warn { color: var(--bad); }
 <button id="create-preset">Create from current routes</button>
 </div>
 <p class="note">Save and Create store what is routed now, not what is staged. Names can use letters, digits, - and _.</p>
-<h2>Stored EDIDs</h2>
+</details>
+<details class="region" id="region-edids" open><summary><h2>Stored EDIDs</h2></summary>
 <div class="store">
 <select id="store-from" aria-label="EDID to store"></select>
 <span>into</span>
@@ -351,9 +361,12 @@ dialog .warn { color: var(--bad); }
 <select id="delete-slot" aria-label="Stored EDID to delete"></select>
 <button id="delete">Delete</button>
 </div>
+</details>
+<details class="region" id="region-about" open><summary><h2>About this page</h2></summary>
 <p class="note">Changes here go to the router straight away, once confirmed.</p>
 <p class="note">Hotplug makes a port look unplugged for 2 seconds. On an output it can wake a display that lost its picture. On an input it makes the source read its EDID again, and every output that input feeds drops too.</p>
 <p class="note">Live means changes made on the router appear here as they happen. Not live means this browser can't reach the router itself: everything still works, but press Reload to see them. The router never announces stored EDIDs, so they are read again when you click the filter box.</p>
+</details>
 </main>
 <dialog id="confirm">
 <p id="confirm-title"></p>
@@ -815,6 +828,23 @@ async function slotAction(path, body, title, lines, warning) {
 		say('Done.')
 	}
 }
+// ---- regions: each remembers whether it was open, in this browser ----
+for (const region of document.querySelectorAll('details.region')) {
+	try {
+		const saved = localStorage.getItem('lw3-' + region.id)
+		if (saved !== null) region.open = saved === 'open'
+	} catch {
+		// private browsing can refuse storage, and every region then starts open
+	}
+	region.addEventListener('toggle', () => {
+		try {
+			localStorage.setItem('lw3-' + region.id, region.open ? 'open' : 'closed')
+		} catch {
+			// as above
+		}
+	})
+}
+
 // ---- router presets ----
 const PRESET_NAME = /^[A-Za-z0-9_-]{1,46}$/
 let presetTimer
@@ -834,6 +864,12 @@ function renderPresets(presets) {
 		const name = document.createElement('th')
 		name.className = 'port'
 		name.textContent = preset.name
+		if (preset.slots.length) {
+			const slot = document.createElement('div')
+			slot.className = 'note'
+			slot.textContent = 'Front panel ' + preset.slots.join(', ')
+			name.append(slot)
+		}
 		const routes = document.createElement('td')
 		routes.className = 'note'
 		routes.textContent = preset.routes.map((input, index) => (index + 1) + ': ' + (input ? 'I' + input : '-')).join('  ') + (preset.live ? '  (live now)' : '')

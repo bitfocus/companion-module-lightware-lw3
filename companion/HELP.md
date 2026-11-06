@@ -2,6 +2,8 @@ Version 3.0.0 is a rewrite, built from measurements of one router, an MX2-8x8-HD
 
 ## SETUP
 
+The connection settings say which router it's connected to, with its model, firmware and size.
+
 Enter the router's IP address. LW3 uses TCP port 6107, which is the default.
 
 ## HOW IT WORKS
@@ -48,11 +50,12 @@ Presets added, renamed or deleted elsewhere, such as on the router's web page, a
 
 #### Saving router presets
 
-A save stores what is routed now. Staged routes aren't routed yet, so take them first.
+A save stores what is routed now. With routes staged, it stores what a take would leave instead: the staged routes, and the current ones everywhere else. Nothing is routed by saving.
 
-- **SAVE PRESET button:** press it, and it and every router preset button flash red. Press a router preset within 5 seconds to overwrite it. Pressing SAVE again, or anything else, cancels.
+- **SAVE PRESET button:** press it, and it, every router preset button, and the inputs that have a front-panel preset all flash red. Within 5 seconds, press a router preset to overwrite it, or an input to save to that front-panel preset button, as the router's own front panel does. An empty front-panel button gets a new preset called `Button1` and so on. Pressing SAVE again, or anything else, cancels.
 - **Overwrite a router preset** action: for a button of your own. There is no one-press preset for it, as the old routes are lost.
 - **Create a router preset** action: makes a new preset from the current routes. Names can use up to 46 letters, digits, `-` and `_`. The router allows more, but those would end up inside commands.
+- **Front-panel presets:** the router has preset buttons on its front panel, and the module has a button for each, under Router presets. Each shows the name of the preset it holds, or `EMPTY` with the name SAVE would give it, recalls it, and follows any change made on the router. Place them once, and a preset saved with SAVE and an input appears on them by itself.
 - **Ports page:** the Router presets table shows each preset's routes, and has Save, Rename, Copy and Delete for each, and a box to create one. Each asks first.
 
 ### Locked outputs

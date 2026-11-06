@@ -35,6 +35,8 @@ export class RouterState {
 	readonly hotplugging = new Set<PortId>()
 	/** SAVE was pressed: the next router preset pressed is overwritten instead of recalled */
 	saveArmed = false
+	/** The front panel's preset buttons, by number: the preset each holds, or '' */
+	readonly slots = new Map<number, string>()
 
 	selectInput(input: number): void {
 		if (this.pairStaged) this.selectedOutput = undefined
@@ -104,6 +106,19 @@ export class RouterState {
 	}
 
 	/** True while this preset's routes are staged and a take would change something */
+	/** What a take would leave routed: the staged routes, and the current ones everywhere else */
+	takeResult(): number[] {
+		return Array.from({ length: this.outputCount }, (_, index) => {
+			const output = index + 1
+			return this.pendingInput(output) ?? this.routes.get(output) ?? 0
+		})
+	}
+
+	slotPreset(slot: number): string | undefined {
+		const name = this.slots.get(slot)
+		return name && this.presets.has(name) ? name : undefined
+	}
+
 	isPresetStaged(name: string): boolean {
 		return this.stagedPreset === name && this.hasStagedRoutes
 	}

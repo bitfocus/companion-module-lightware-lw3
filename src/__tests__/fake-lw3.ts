@@ -51,6 +51,8 @@ export class FakeLw3 {
 	readonly emulated: string[]
 	readonly inputHdcp: string[]
 	readonly outputHdcp: string[]
+	/** The front panel's preset buttons, the preset each holds or '' */
+	readonly slots: string[] = Array.from({ length: 8 }, () => '')
 	/** `EnableHPD` on inputs, AUTO or OFF */
 	readonly inputHotplug: string[]
 	/** `Enable5V` on outputs, true or false */
@@ -136,6 +138,10 @@ export class FakeLw3 {
 			this.#announce(`${PRESET}/*`, `${name}.VideoDestination=${routes.join(';')};`, PRESET)
 	}
 
+	announceSlot(slot: number): void {
+		this.#announce(PRESET, `Button${slot}AssignedPreset=${this.slots[slot - 1]}`)
+	}
+
 	deletePresetFromPanel(name: string): void {
 		this.presets.delete(name)
 		this.#announceLine(PRESET, `DEL ${PRESET}/${name}`)
@@ -208,7 +214,8 @@ export class FakeLw3 {
 
 	/** `path` is what a client opened, and `node` what the change message names, if different */
 	#announce(path: string, property: string, node = path): void {
-		this.#announceLine(path, `CHG ${node}${node === PRESET ? '/' : '.'}${property}`)
+		// a change heard through a wildcard names the child, such as /MEDIA/PRESET/SHOW-A.VideoDestination
+		this.#announceLine(path, `CHG ${node}${node === path ? '.' : '/'}${property}`)
 	}
 
 	#announceLine(path: string, line: string): void {
@@ -237,6 +244,22 @@ export class FakeLw3 {
 		const hdcp = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(HdcpVersion|HdcpMode)=(.*)$/.exec(command)
 		if (hdcp) return this.#setHdcp(hdcp[1], hdcp[2], Number(hdcp[3]), hdcp[4], hdcp[5], changes)
 
+		const slot = /^SET \/MEDIA\/PRESET\.Button(\d+)AssignedPreset=(.*)$/.exec(command)
+		if (slot) {
+			this.slots[Number(slot[1]) - 1] = slot[2]
+			changes.push([PRESET, `Button${slot[1]}AssignedPreset=${slot[2]}`])
+			return [`pw ${PRESET}.Button${slot[1]}AssignedPreset=${slot[2]}`]
+		}
+		const write = /^SET \/MEDIA\/PRESET\/([^.]+)\.VideoDestination=(.*)$/.exec(command)
+		if (write) {
+			const entries = write[2].split(';')
+			// measured: one entry per output, and the trailing semicolon
+			if (!this.presets.has(write[1]) || entries.pop() !== '' || entries.length !== this.outputs.length) {
+				return [`pE ${PRESET}/${write[1]}.VideoDestination %E004: Invalid value`]
+			}
+			this.savePresetFromPanel(write[1], entries)
+			return [`pw ${PRESET}/${write[1]}.VideoDestination=${write[2]}`]
+		}
 		const hotplug = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(EnableHPD|Enable5V)=(.*)$/.exec(command)
 		if (hotplug) {
 			const [, path, kind, number, property, value] = hotplug
@@ -288,6 +311,8 @@ export class FakeLw3 {
 			]
 		}
 		if (target === PRESET) return [...this.presets.keys()].map((name) => `n- ${PRESET}/${name}`)
+		if (target === `${PRESET}.*`)
+			return this.slots.map((name, index) => `pw ${PRESET}.Button${index + 1}AssignedPreset=${name}`)
 		const presetRoutes = /^\/MEDIA\/PRESET\/([^.]+)\.VideoDestination$/.exec(target)
 		const stored = presetRoutes ? this.presets.get(presetRoutes[1]) : undefined
 		if (presetRoutes && stored) return [`pw ${target}=${stored.join(';')};`]
@@ -361,6 +386,17 @@ export class FakeLw3 {
 			if (parts.length !== 2 || parts[1] !== 'VIDEO') return fail('E004', 'Invalid value')
 			if (this.presets.has(parts[0])) return fail('E003', 'Already exists')
 			this.savePresetFromPanel(parts[0], this.#presetRoutes())
+			return done
+		}
+		if (method === 'createButtonAssignedPreset') {
+			const slot = Number(parts[0])
+			if (parts.length !== 2 || parts[1] !== 'VIDEO' || !(slot >= 1 && slot <= this.slots.length)) {
+				return fail('E004', 'Invalid value')
+			}
+			const name = `Button${slot}`
+			this.savePresetFromPanel(name, this.#presetRoutes())
+			this.slots[slot - 1] = name
+			this.#announce(PRESET, `Button${slot}AssignedPreset=${name}`)
 			return done
 		}
 		if (method === 'delete') {
