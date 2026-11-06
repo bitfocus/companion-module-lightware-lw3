@@ -24,6 +24,7 @@ export interface OutputRow {
 
 export interface PortsSnapshot {
 	routerName: string
+	standby: boolean
 	inputs: InputRow[]
 	outputs: OutputRow[]
 	edids: EdidSlot[]
@@ -295,6 +296,7 @@ input.invalid { outline: 2px solid var(--bad); }
 .sent-as:empty { display: none; }
 h1 small { font-size: 12px; font-weight: 500; margin-left: 8px; color: GrayText; }
 h1 small.on { color: var(--good); }
+#standby { color: var(--bad); }
 .router-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; padding: 4px; }
 .router-row label { font-weight: 500; }
 .router-row input { flex: 1 1 200px; width: auto; max-width: 360px; }
@@ -314,7 +316,7 @@ dialog .warn { color: var(--bad); }
 </head>
 <body>
 <header>
-<h1><span id="title">Lightware ports</span><small id="live">Not live</small></h1>
+<h1><span id="title">Lightware ports</span><small id="live">Not live</small><small id="standby" hidden>Standby: changes are refused</small></h1>
 <button id="apply" disabled>Apply</button>
 <button id="reload">Reload</button>
 <button id="revert" disabled title="Fill in the values from before the last Apply">Revert last Apply</button>
@@ -573,6 +575,7 @@ function refreshApply() {
 
 function render(data) {
 	snapshot = data
+	$('standby').hidden = !data.standby
 	const previous = new Map(rows.map((row) => [row.port, row.status.textContent + '|' + row.status.className]))
 	rows = []
 	const routerRow = buildRouterRow(data.routerName)
@@ -981,7 +984,7 @@ async function load() {
 
 /** Reads and Apply go through the module. This only listens, straight to the router, as Companion can't push to a page. */
 // presets being added or deleted are only announced on /MEDIA/PRESET, and changes to one only on /MEDIA/PRESET/*
-const LIVE_SUBSCRIPTIONS = ['OPEN /MEDIA/NAMES/VIDEO', 'OPEN /EDID', 'OPEN /MEDIA/XP/VIDEO', 'OPEN /MANAGEMENT/UID', 'OPEN /MEDIA/PRESET', 'OPEN /MEDIA/PRESET/*']
+const LIVE_SUBSCRIPTIONS = ['OPEN /MEDIA/NAMES/VIDEO', 'OPEN /EDID', 'OPEN /MEDIA/XP/VIDEO', 'OPEN /MANAGEMENT/UID', 'OPEN /MANAGEMENT/POWER', 'OPEN /MEDIA/PRESET', 'OPEN /MEDIA/PRESET/*']
 const HEARTBEAT_MS = 5000
 const RETRY_MS = 5000
 function showLive(on) {
@@ -1065,6 +1068,8 @@ function liveChange(line) {
 	const hdcp = /^\/MEDIA\/PORTS\/VIDEO\/([IO]\d+)\/SETTINGS$/.exec(path)
 	if (path === '/MEDIA/NAMES/VIDEO') {
 		applyLive(rowOf(property), 'name', value.slice(value.indexOf(';') + 1).replace(/\\(.)/g, '$1'))
+	} else if (path === '/MANAGEMENT/POWER' && property === 'Operation') {
+		$('standby').hidden = value !== 'STANDBY'
 	} else if (path === '/MANAGEMENT/UID' && property === 'DeviceLabel') {
 		applyLive(rowOf('Router'), 'name', value.replace(/\\(.)/g, '$1'))
 	} else if (path === '/EDID' && property === 'EdidStatus') {
@@ -1086,6 +1091,7 @@ async function catchUp() {
 	const data = await response.json()
 	snapshot = data
 	applyLive(rowOf('Router'), 'name', data.routerName)
+	$('standby').hidden = !data.standby
 	for (const [kind, list] of [['I', data.inputs], ['O', data.outputs]]) {
 		for (const item of list) {
 			const row = rowOf(kind + item.port)

@@ -11,6 +11,7 @@ const NAMES = '/MEDIA/NAMES/VIDEO'
 const PRESETS = '/MEDIA/PRESET'
 const PORTS = '/MEDIA/PORTS/VIDEO'
 const UID = '/MANAGEMENT/UID'
+export const POWER = '/MANAGEMENT/POWER'
 
 export const EDID_BANKS = ['F', 'D', 'U'] as const
 export type EdidBank = (typeof EDID_BANKS)[number]
@@ -64,6 +65,11 @@ export const Cmd = {
 	names: `GET ${NAMES}.*`,
 	presets: `GET ${PRESETS}`,
 	softReset: 'CALL /SYS:softReset()',
+	/** NORMAL or STANDBY. Measured: announced only to `OPEN /MANAGEMENT/POWER`. */
+	power: `GET ${POWER}.Operation`,
+	subscribePower: `OPEN ${POWER}`,
+	standby: `CALL ${POWER}:standby()`,
+	wakeUp: `CALL ${POWER}:wakeUp()`,
 	inputHdcp: (input: number): string => `GET ${PORTS}/I${input}/SETTINGS.HdcpVersion`,
 	outputHdcp: (output: number): string => `GET ${PORTS}/O${output}/SETTINGS.HdcpMode`,
 	setInputHdcp: (input: number, value: string): string => `SET ${PORTS}/I${input}/SETTINGS.HdcpVersion=${value}`,
@@ -123,6 +129,10 @@ export const ErrorCode = {
 	accessDenied: 'E007',
 	/** Creating a router preset with a name already in use */
 	alreadyExists: 'E003',
+	/** Standby while in standby, or waking while awake */
+	illegalOperation: 'E006',
+	/** Any change while the router is in standby: "Node disabled or standby mode active" */
+	standby: 'E012',
 } as const
 
 /** Splits a byte stream into the router's CRLF terminated lines */

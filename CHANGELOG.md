@@ -34,7 +34,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(presets):** a router preset's name can be typed into its action while the router is offline.
 - **feat(presets):** save router presets: a **SAVE PRESET** button that overwrites the next router preset pressed, **Overwrite a router preset** and **Create a router preset** actions, and a Router presets table on the ports page to save, rename, copy, delete and create them.
 - **feat(presets):** SAVE then an input saves to that front-panel preset button, as on the router, making `ButtonN` when it is empty. New buttons for the front-panel presets show and recall whatever each holds. With routes staged, a save stores what a take would leave, without routing anything.
-- **feat(connection):** the connection settings show the model, firmware and size of the router connected to.
+- **feat(power):** a **Put the router in standby, or wake it** action, with no preset. Standby is shown wherever it was done from: a connection warning, a log line, a `power` variable, a **Router in standby** feedback and a note on the ports page.
+- **feat(connection):** the connection settings show the model, name, firmware and size of the router connected to. A firmware change is noticed within a few seconds, even when the connection doesn't drop, and the router is read again.
 - **feat(presets):** router presets added, renamed or deleted elsewhere appear straight away. The router announces those only on `/MEDIA/PRESET` itself, so the module subscribes there as well as to the presets.
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
 - **feat(mute):** new **Mute or unmute a port** action, **Muted port** feedback, and a **MUTE** button that acts on the input or output pressed last. A muted port stays routed and sends black. Mutes made elsewhere are logged.
@@ -79,3 +80,5 @@ With a command line test: several routes in one command, unrouting, a route to a
 Mute and hotplug, with a command line test: muting and unmuting inputs and outputs, several in one command, a mute staying through a route change, a locked output refusing to mute, and `U` for a locked and muted output. Hotplug on Input 1 with a MacBook and on Output 1 with a display, timed from the router's status.
 
 Router presets, with a command line test: creating, saving, copying, renaming and deleting, the forms each needs, the errors for a name in use and a missing preset, and which subscription hears each announcement. Writing a preset's routes directly, and loading one written that way, and the front-panel preset slots.
+
+Standby, with a command line test: entering and leaving it, its announcement, the refusal of routes, names, locks, mutes and HDCP while in it, and how long signals took to come back.

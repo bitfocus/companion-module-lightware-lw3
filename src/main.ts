@@ -8,7 +8,7 @@ import {
 	type LogLevel,
 	type SomeCompanionConfigField,
 } from '@companion-module/base'
-import { UpdateActions, type ActionsSchema, type LockCommand, type MuteCommand } from './actions.js'
+import { UpdateActions, type ActionsSchema, type LockCommand, type MuteCommand, type PowerCommand } from './actions.js'
 import { Lw3Client } from './client.js'
 import {
 	AUTO_ROUTE_LABELS,
@@ -34,6 +34,7 @@ import {
 	EDID_BANKS,
 	ErrorCode,
 	MAX_NAME_LENGTH,
+	POWER,
 	cleanName,
 	isSafePresetName,
 	plainName,
@@ -163,7 +164,9 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** Companion asks for the settings each time they're opened, so this is current */
 	#routerSummary(): string {
 		const { model, firmware, routerName, inputCount, outputCount } = this.state
-		if (!this.#socket?.isConnected || !model) return 'Not connected to a router.'
+		// Companion only asks when the settings open, so this can't follow a connection made after that
+		if (!this.#socket?.isConnected || !model)
+			return 'Not connected to a router. Close and reopen these settings to check again.'
 		// a line each. Markdown needs a backslash at the end of a line to keep its break.
 		return [
 			`Model: ${model}`,
@@ -234,7 +237,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			outputs.push({ port, name: state.outputName(port), hdcp })
 		}
 		const edids = await this.#readEdidSlots()
-		return edids && { routerName: state.routerName, inputs, outputs, edids }
+		return edids && { routerName: state.routerName, standby: state.standby, inputs, outputs, edids }
 	}
 
 	async #readEdidSlots(): Promise<EdidSlot[] | undefined> {
@@ -906,6 +909,42 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return undefined
 	}
 
+	/** Standby turns the outputs off and refuses every change until the router wakes */
+	async setPower(command: PowerCommand): Promise<void> {
+		const standby = command === 'toggle' ? !this.state.standby : command === 'standby'
+		const lines = await this.#client.request(standby ? Cmd.standby : Cmd.wakeUp, true)
+		if (lines === undefined) {
+			this.log('warn', `Not connected, so the router wasn't ${standby ? 'put in standby' : 'woken'}`)
+			return
+		}
+		const error = replyError(lines)
+		// measured: asking for the mode it is already in gets "Illegal operation"
+		if (error && error.code !== ErrorCode.illegalOperation) {
+			this.log('warn', `The router refused to ${standby ? 'go into standby' : 'wake'}: ${error.message}`)
+		}
+		// the change message is what moves the module's state, so this only covers a missed one
+		const mode = await this.#client.request(Cmd.power)
+		if (mode) for (const line of mode) this.#applyProperty(parseProperty(line))
+	}
+
+	#applyPower(value: string): void {
+		const standby = value === 'STANDBY'
+		const changed = standby !== this.state.standby
+		this.state.standby = standby
+		this.setVariableValues({ power: standby ? 'STANDBY' : 'NORMAL' })
+		this.checkFeedbacks('routerStandby')
+		// again on every read, as a reconnect sets the status back to OK
+		if (standby) this.updateStatus(InstanceStatus.UnknownWarning, 'Lightware router in standby')
+		if (!changed) return
+		if (standby) {
+			this.log('warn', 'The router is in standby: its outputs are off and it refuses any change')
+		} else {
+			// measured: signal comes back over about 20 s after this
+			this.log('info', 'The router is awake. Its signals take about 20 s to come back.')
+			this.updateStatus(InstanceStatus.Ok)
+		}
+	}
+
 	async softReset(): Promise<void> {
 		this.log('warn', 'Soft resetting the router')
 		await this.#client.request(Cmd.softReset, true)
@@ -1018,8 +1057,22 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#startHeartbeat(): void {
 		this.#stopHeartbeat()
 		this.#heartbeatTimer = setInterval(() => {
-			if (this.#client.idle) void this.#client.request(Cmd.productName)
+			if (this.#client.idle) void this.#checkFirmware()
 		}, HEARTBEAT_MS)
+	}
+
+	/**
+	 * The heartbeat asks for the firmware version. Seen after an upgrade: the router came back still
+	 * reporting the old version, then changed it without the connection dropping, so it is watched.
+	 */
+	async #checkFirmware(): Promise<void> {
+		const lines = await this.#client.request(Cmd.firmware)
+		const version = lines && parseProperty(lines[0] ?? '')?.value
+		if (!version || !this.state.firmware || version === this.state.firmware) return
+		this.log('info', `Router firmware is now ${version}, was ${this.state.firmware}. Reading the router again.`)
+		this.state.firmware = version
+		this.setVariableValues({ firmware: version })
+		await this.#readRouter()
 	}
 
 	#stopHeartbeat(): void {
@@ -1038,6 +1091,9 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		await this.#client.request(Cmd.subscribeRouting)
 		await this.#client.request(Cmd.subscribeNames)
 		await this.#client.request(Cmd.subscribeRouterName)
+		await this.#client.request(Cmd.subscribePower)
+		const power = await this.#client.request(Cmd.power)
+		if (power) for (const line of power) this.#applyProperty(parseProperty(line))
 		await this.#client.request(Cmd.subscribePresets)
 		await this.#client.request(Cmd.subscribePresetList)
 		const supported = await this.#readState()
@@ -1169,6 +1225,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				this.state.sourceDetail = parseList(property.value)
 				this.checkFeedbacks('portLegend')
 			}
+		} else if (property.path === POWER && property.property === 'Operation') {
+			this.#applyPower(property.value)
 		} else if (property.path === UID_PATH && property.property === 'DeviceLabel') {
 			this.#applyRouterName(unescapeValue(property.value))
 		} else if (property.path === NAMES_PATH) {

@@ -111,6 +111,12 @@ You can paste from a spreadsheet into a Name cell: lines fill downward, and tabs
 
 EDID and HDCP changes can make sources and displays renegotiate, which can drop their picture. The page warns you, and says which of the changed inputs have a live signal.
 
+### Standby
+
+The router's standby turns every output off, and it refuses any change until it wakes. The **Put the router in standby, or wake it** action does either, or toggles. There is deliberately no preset for it.
+
+While the router is in standby, wherever that was done from, the connection shows a warning, the log says so, the `power` variable is `STANDBY`, the **Router in standby** feedback is on, and the ports page says so at the top. On the MX2-8x8-HDMI20-L, signals took about 20 seconds to come back after waking.
+
 ### Soft reset
 
 The **Soft reset the router** action restarts the router. There is deliberately no preset for it.

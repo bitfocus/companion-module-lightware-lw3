@@ -41,6 +41,9 @@ const newPort = (name: string): Port => ({
  */
 export class FakeLw3 {
 	routerName = 'MX2-8x8-HDMI20-L'
+	firmware = '1.10.1b4'
+	/** NORMAL or STANDBY. In standby every change is refused. */
+	power = 'NORMAL'
 	sourceDetail = 'F;F;0;0;0;0;0;0;'
 	destinationDetail = 'F;0;0;0;0;0;0;0;'
 	readonly routes: number[]
@@ -226,6 +229,20 @@ export class FakeLw3 {
 
 	#execute(command: string, changes: [string, string][]): string[] {
 		const notExists = (path: string, prefix = 'pE'): string[] => [`${prefix} ${path} %E002: Not exists`]
+		const power = /^CALL \/MANAGEMENT\/POWER:(standby|wakeUp)\(\)$/.exec(command)
+		if (power) {
+			const wanted = power[1] === 'standby' ? 'STANDBY' : 'NORMAL'
+			if (this.power === wanted) return [`mE /MANAGEMENT/POWER:${power[1]} %E006: Illegal operation`]
+			this.power = wanted
+			changes.push(['/MANAGEMENT/POWER', `Operation=${wanted}`])
+			return [`mO /MANAGEMENT/POWER:${power[1]}=`]
+		}
+		if (command === 'GET /MANAGEMENT/POWER.Operation') return [`pr /MANAGEMENT/POWER.Operation=${this.power}`]
+		// measured: in standby, every change gets this, whatever it is
+		const change = /^(CALL|SET) (\S+?)(?:[:.=]|$)/.exec(command)
+		if (change && this.power === 'STANDBY') {
+			return [`${change[1] === 'CALL' ? 'mE' : 'pE'} ${change[2]} %E012: Node disabled or standby mode active`]
+		}
 		const open = /^OPEN (\S+)$/.exec(command)
 		if (open) return [`o- ${open[1]}`]
 
@@ -277,7 +294,7 @@ export class FakeLw3 {
 		if (!get) return notExists(command)
 		const target = get[1]
 		if (target === '/.ProductName') return ['pr /.ProductName=MX2-8x8-HDMI20-L']
-		if (target === '/MANAGEMENT/UID.FirmwareVersion') return ['pr /MANAGEMENT/UID.FirmwareVersion=1.10.1b4']
+		if (target === '/MANAGEMENT/UID.FirmwareVersion') return [`pr /MANAGEMENT/UID.FirmwareVersion=${this.firmware}`]
 		if (target === '/MANAGEMENT/UID.DeviceLabel') return [`pw /MANAGEMENT/UID.DeviceLabel=${escaped(this.routerName)}`]
 		if (target === `${XP}.SourcePortGuiStatus`) return [`pr ${XP}.SourcePortGuiStatus=${this.sourceDetail}`]
 		if (target === `${XP}.DestinationPortGuiStatus`)

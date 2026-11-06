@@ -37,6 +37,8 @@ export class RouterState {
 	saveArmed = false
 	/** The front panel's preset buttons, by number: the preset each holds, or '' */
 	readonly slots = new Map<number, string>()
+	/** In standby the outputs are off and every change is refused */
+	standby = false
 
 	selectInput(input: number): void {
 		if (this.pairStaged) this.selectedOutput = undefined

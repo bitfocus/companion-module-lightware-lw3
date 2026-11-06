@@ -17,6 +17,7 @@ export function UpdateVariableDefinitions(
 	const definitions: CompanionVariableDefinitions<VariablesSchema> = {
 		model: { name: 'Router model' },
 		router_name: { name: 'Router name' },
+		power: { name: 'Router power: NORMAL or STANDBY' },
 		firmware: { name: 'Router firmware' },
 		inputs: { name: 'Number of inputs' },
 		outputs: { name: 'Number of outputs' },

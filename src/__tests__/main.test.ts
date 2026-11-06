@@ -785,7 +785,8 @@ describe('the module against the fake router', () => {
 		const definitions = mock(module.setActionDefinitions).mock.calls.length
 		const before = fake.received.length
 		await until(() => fake.received.length >= before + 2, 8000)
-		expect(new Set(fake.received.slice(before))).toEqual(new Set(['GET /.ProductName']))
+		// the heartbeat asks for the firmware, which also notices an upgrade
+		expect(new Set(fake.received.slice(before))).toEqual(new Set(['GET /MANAGEMENT/UID.FirmwareVersion']))
 		expect(mock(module.checkFeedbacks).mock.calls.length).toBe(checks)
 		expect(mock(module.setActionDefinitions).mock.calls.length).toBe(definitions)
 	}, 10_000)
@@ -889,7 +890,7 @@ describe('the module against the fake router', () => {
 		})
 
 		it('says in the settings which router it is connected to', async () => {
-			expect((module.getConfigFields()[0] as { value: string }).value).toBe('Not connected to a router.')
+			expect((module.getConfigFields()[0] as { value: string }).value).toContain('Not connected to a router.')
 			await module.init({ host: '127.0.0.1', port })
 			await connected()
 			expect((module.getConfigFields()[0] as { value: string }).value).toBe(
@@ -955,6 +956,57 @@ describe('the module against the fake router', () => {
 		await until(() => !module.state.presets.has('SHOW-B'))
 		await until(() => !Object.keys(lastPresets(module)).includes('preset_SHOW-B'))
 		expect(logged(module, 'info')).toContain('Router presets now: SHOW-A')
+	})
+
+	it('notices new firmware without the connection dropping, and reads the router again', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		fake.firmware = '1.11.3b5'
+		await until(() => variable(module, 'firmware') === '1.11.3b5', 8000)
+		expect(logged(module, 'info')).toContain('Router firmware is now 1.11.3b5, was 1.10.1b4. Reading the router again.')
+		await until(() => logged(module, 'info').filter((line) => line.startsWith('Router found')).length === 2)
+	}, 15_000)
+
+	describe('standby', () => {
+		it('puts the router in standby and wakes it, showing it meanwhile', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			expect(variable(module, 'power')).toBe('NORMAL')
+			await module.setPower('toggle')
+			await until(() => module.state.standby)
+			expect(variable(module, 'power')).toBe('STANDBY')
+			expect(mock(module.updateStatus)).toHaveBeenCalledWith(
+				InstanceStatus.UnknownWarning,
+				'Lightware router in standby',
+			)
+			expect(logged(module, 'warn')).toContain(
+				'The router is in standby: its outputs are off and it refuses any change',
+			)
+			await module.routeNow(3, 5)
+			expect(logged(module, 'warn').join()).toContain('Node disabled or standby mode active')
+			await module.setPower('wake')
+			await until(() => !module.state.standby)
+			expect(mock(module.updateStatus)).toHaveBeenLastCalledWith(InstanceStatus.Ok)
+			expect(writes()).toEqual([
+				'CALL /MANAGEMENT/POWER:standby()',
+				'CALL /MEDIA/XP/VIDEO:switch(I3:O5)',
+				'CALL /MANAGEMENT/POWER:wakeUp()',
+			])
+		})
+
+		it('finds a router already in standby on connecting, and says so', async () => {
+			fake.power = 'STANDBY'
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			expect(module.state.standby).toBe(true)
+			expect(mock(module.updateStatus)).toHaveBeenLastCalledWith(
+				InstanceStatus.UnknownWarning,
+				'Lightware router in standby',
+			)
+			// waking an awake router, or the other way round, isn't worth a warning
+			await module.setPower('standby')
+			expect(logged(module, 'warn').filter((line) => line.startsWith('The router refused'))).toEqual([])
+		})
 	})
 
 	it('tests a quiet connection, and reconnects when the router stops answering', async () => {

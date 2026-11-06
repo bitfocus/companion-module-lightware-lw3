@@ -6,6 +6,7 @@ type NoOptions = Record<string, never>
 
 export type LockCommand = 'lockDestination' | 'unlockDestination' | 'toggle'
 export type MuteCommand = 'mute' | 'unmute' | 'toggle'
+export type PowerCommand = 'standby' | 'wake' | 'toggle'
 
 export type ActionsSchema = {
 	xpt: { options: { input: string; output: string } }
@@ -30,6 +31,7 @@ export type ActionsSchema = {
 	hotplugInput: { options: { input: string; seconds: number } }
 	rename: { options: { port: string; name: string } }
 	softreset: { options: NoOptions }
+	power: { options: { cmd: string } }
 }
 
 export function UpdateActions(self: ModuleInstance): void {
@@ -283,6 +285,25 @@ export function UpdateActions(self: ModuleInstance): void {
 				{ type: 'textinput', id: 'name', label: 'New name', default: 'New name' },
 			],
 			callback: async (action) => self.renamePort(String(action.options.port), String(action.options.name)),
+		},
+		power: {
+			name: 'Put the router in standby, or wake it',
+			description:
+				'In standby every output is off, and the router refuses any change until it wakes. Signals took about 20 s to come back after waking. There is no preset for this on purpose.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'cmd',
+					label: 'Standby',
+					default: 'toggle',
+					choices: [
+						{ id: 'toggle', label: 'Toggle' },
+						{ id: 'standby', label: 'Standby' },
+						{ id: 'wake', label: 'Wake' },
+					],
+				},
+			],
+			callback: async (action) => self.setPower(String(action.options.cmd) as PowerCommand),
 		},
 		softreset: {
 			name: 'Soft reset the router',

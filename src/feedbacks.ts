@@ -21,6 +21,7 @@ export type FeedbacksSchema = {
 	presetStaged: { type: 'boolean'; options: { preset: string } }
 	portMuted: { type: 'boolean'; options: { port: string } }
 	saveArmed: { type: 'boolean'; options: Record<string, never> }
+	routerStandby: { type: 'boolean'; options: Record<string, never> }
 	saveSlotArmed: { type: 'boolean'; options: { slot: number } }
 	slotLive: { type: 'boolean'; options: { slot: number } }
 	slotStaged: { type: 'boolean'; options: { slot: number } }
@@ -256,6 +257,14 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
 			options: [slotOption],
 			callback: (feedback) => state.saveArmed && state.flashOn && state.slots.has(Number(feedback.options.slot)),
+		},
+		routerStandby: {
+			type: 'boolean',
+			name: 'Router in standby',
+			description: 'True while the router is in standby, with its outputs off and changes refused',
+			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
+			options: [],
+			callback: () => state.standby,
 		},
 		saveArmed: {
 			type: 'boolean',
