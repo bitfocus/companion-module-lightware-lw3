@@ -1,8 +1,2 @@
 package.json
 /LICENSE.md
-
-# keep upstream's formatting of these GitHub files
-/.github/ISSUE_TEMPLATE/config.yml
-/.github/workflows/companion-module-checks.yaml
-/captures
-/docs
