@@ -5,6 +5,7 @@
 import { Script } from 'node:vm'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { InstanceStatus } from '@companion-module/base'
+import { portNumber, portOf } from '../choices.js'
 import { plainName } from '../protocol.js'
 import { FakeLw3, until } from './fake-lw3.js'
 
@@ -238,6 +239,77 @@ describe('the module against the fake router', () => {
 			expect(writes()).toContain('CALL /MEDIA/XP/VIDEO:switch(I1:O5)')
 			await module.mutePort('I2', 'mute')
 			expect(logged(module, 'warn')).toContain("Input 2 is locked, so it can't be muted")
+		})
+	})
+
+	describe('what the reviewers check', () => {
+		it('sends only the variables that changed when a route changes', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await new Promise((resolve) => setTimeout(resolve, 200))
+			const before = mock(module.setVariableValues).mock.calls.length
+			await module.routeNow(3, 7)
+			await until(() => module.state.routes.get(7) === 3)
+			const sent = mock(module.setVariableValues).mock.calls.slice(before) as [Record<string, unknown>][]
+			const ids = new Set(sent.flatMap(([values]) => Object.keys(values)))
+			expect(ids.has('source_O7')).toBe(true)
+			expect(ids.has('sourcename_O7')).toBe(true)
+			expect(ids.has('source_O1')).toBe(false)
+			expect(ids.has('sourcename_O8')).toBe(false)
+		})
+
+		it('runs one preset read at a time, with one more after it for anything that came in meanwhile', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const before = fake.received.length
+			const save = async (): Promise<unknown> =>
+				module.handleHttpRequest({
+					method: 'POST',
+					path: '/preset/save',
+					baseUrl: '',
+					originalUrl: '/preset/save',
+					hostname: 'companion.local',
+					ip: '127.0.0.1',
+					query: {},
+					headers: { host: 'companion.local:8000' },
+					body: JSON.stringify({ name: 'SHOW-A' }),
+				})
+			await Promise.all([save(), save(), save()])
+			expect(fake.received.slice(before).filter((command) => command === 'GET /MEDIA/PRESET')).toHaveLength(2)
+		})
+
+		it('takes a bare number from an expression, and says so when a port makes no sense', async () => {
+			expect(portNumber(1, 'I')).toBe(1)
+			expect(portNumber('I3', 'I')).toBe(3)
+			expect(portNumber('O3', 'I')).toBeUndefined()
+			expect(portNumber(1.5, 'O')).toBeUndefined()
+			expect(portNumber('i3', 'I')).toBe(3)
+			expect(portOf('o2')).toBe('O2')
+			expect(portOf('SELECTED')).toBe('selected')
+			expect(portOf('2')).toBeUndefined()
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await module.mutePort('1', 'mute')
+			expect(logged(module, 'warn')).toContain('"1" isn\'t a port: use I1 or O1')
+			await module.mutePort('o3', 'mute')
+			expect(writes()).toEqual(['CALL /MEDIA/XP/VIDEO:muteDestination(O3)'])
+		})
+
+		it('says what to type for a port dropdown in expression mode, and hides what a tick makes irrelevant', async () => {
+			await module.init({ host: '' })
+			const actions = lastCall(module.setActionDefinitions)
+			const option = (action: string, id: string): Record<string, any> =>
+				actions[action].options.find((candidate: { id: string }) => candidate.id === id)
+			expect(option('xpt', 'input').expressionDescription).toBe('Input number, such as 1')
+			expect(option('xpt', 'input').allowCustom).toBe(true)
+			expect(option('mute', 'port').expressionDescription).toContain('selected')
+			expect(option('outputLock', 'cmd').expressionDescription).toContain('lockDestination')
+			for (const action of ['unroute', 'outputLock', 'hotplugOutput']) {
+				expect(option(action, 'useSelected').disableAutoExpression).toBe(true)
+				expect(option(action, 'output').isVisibleExpression).toBe('!$(options:useSelected)')
+			}
+			expect(option('outputLock', 'output')).toMatchObject({ step: 1, asInteger: true })
+			expect(option('recallSlot', 'slot')).toMatchObject({ step: 1, asInteger: true })
 		})
 	})
 

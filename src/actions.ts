@@ -1,4 +1,18 @@
-import { inputChoices, outputChoices, portChoices, portNumber, presetChoices } from './choices.js'
+import {
+	INPUT_EXPRESSION,
+	OUTPUT_EXPRESSION,
+	PORT_EXPRESSION,
+	LAST_PRESSED_EXPRESSION,
+	inputChoices,
+	outputChoices,
+	portChoices,
+	portNumber,
+	presetChoices,
+	INPUT_VALUE,
+	OUTPUT_VALUE,
+	PORT_VALUE,
+	SELECTED_PORT_VALUE,
+} from './choices.js'
 import type ModuleInstance from './main.js'
 import { HOTPLUG_DEFAULT_SECONDS, HOTPLUG_MAX_SECONDS } from './protocol.js'
 
@@ -55,8 +69,24 @@ export function UpdateActions(self: ModuleInstance): void {
 		xpt: {
 			name: 'Route: switch this input to this output now',
 			options: [
-				{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs },
-				{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs },
+				{
+					type: 'dropdown',
+					id: 'input',
+					label: 'Input',
+					default: 'I1',
+					choices: inputs,
+					expressionDescription: INPUT_EXPRESSION,
+					...INPUT_VALUE,
+				},
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
 			],
 			callback: async (action) =>
 				self.routeNow(portNumber(action.options.input, 'I'), portNumber(action.options.output, 'O')),
@@ -65,10 +95,20 @@ export function UpdateActions(self: ModuleInstance): void {
 			name: 'Unroute an output',
 			description: 'Follows the auto-route mode: in Stage this is staged, and otherwise it happens straight away.',
 			options: [
-				{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs },
+				{
+					type: 'dropdown',
+					id: 'output',
+					isVisibleExpression: '!$(options:useSelected)',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
 				{
 					type: 'checkbox',
 					id: 'useSelected',
+					disableAutoExpression: true,
 					label: 'Use the selected output (ignores the output above)',
 					default: false,
 				},
@@ -122,7 +162,18 @@ export function UpdateActions(self: ModuleInstance): void {
 			name: 'Recall a front-panel preset',
 			description:
 				"Recalls the router preset on one of the router's front-panel preset buttons, or stages it with auto-route on Stage. With SAVE waiting, saves into it instead, making a new preset if it is empty.",
-			options: [{ type: 'number', id: 'slot', label: 'Front-panel preset', default: 1, min: 1, max: 64 }],
+			options: [
+				{
+					type: 'number',
+					id: 'slot',
+					label: 'Front-panel preset',
+					default: 1,
+					min: 1,
+					max: 64,
+					step: 1,
+					asInteger: true,
+				},
+			],
 			callback: async (action) => self.recallSlot(Number(action.options.slot)),
 		},
 		armSave: {
@@ -134,12 +185,32 @@ export function UpdateActions(self: ModuleInstance): void {
 		},
 		selectSource: {
 			name: 'Select an input',
-			options: [{ type: 'dropdown', id: 'port', label: 'Input', default: 'I1', choices: inputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Input',
+					default: 'I1',
+					choices: inputs,
+					expressionDescription: INPUT_EXPRESSION,
+					...INPUT_VALUE,
+				},
+			],
 			callback: (action) => self.selectInput(portNumber(action.options.port, 'I')),
 		},
 		selectDestination: {
 			name: 'Select an output',
-			options: [{ type: 'dropdown', id: 'port', label: 'Output', default: 'O1', choices: outputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
+			],
 			callback: (action) => self.selectOutput(portNumber(action.options.port, 'O')),
 		},
 		take: {
@@ -152,7 +223,17 @@ export function UpdateActions(self: ModuleInstance): void {
 			name: 'Route an input to every output',
 			description:
 				'Follows the auto-route mode: with Cut every output changes now, in one command, and with Off or Stage they are staged for TAKE. Locked outputs are left as they are.',
-			options: [{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'input',
+					label: 'Input',
+					default: 'I1',
+					choices: inputs,
+					expressionDescription: INPUT_EXPRESSION,
+					...INPUT_VALUE,
+				},
+			],
 			callback: async (action) => self.routeToAll(portNumber(action.options.input, 'I')),
 		},
 		takeSalvo: {
@@ -169,8 +250,24 @@ export function UpdateActions(self: ModuleInstance): void {
 			name: 'Stage a route: this input to this output',
 			description: 'Stage one route without using the selection. Add several, then Take the staged routes.',
 			options: [
-				{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs },
-				{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs },
+				{
+					type: 'dropdown',
+					id: 'input',
+					label: 'Input',
+					default: 'I1',
+					choices: inputs,
+					expressionDescription: INPUT_EXPRESSION,
+					...INPUT_VALUE,
+				},
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
 			],
 			callback: (action) => self.stage(portNumber(action.options.input, 'I'), portNumber(action.options.output, 'O')),
 		},
@@ -207,10 +304,21 @@ export function UpdateActions(self: ModuleInstance): void {
 		outputLock: {
 			name: 'Lock or unlock an output',
 			options: [
-				{ type: 'number', id: 'output', label: 'Output', default: 1, min: 1, max: 512 },
+				{
+					type: 'number',
+					id: 'output',
+					isVisibleExpression: '!$(options:useSelected)',
+					label: 'Output',
+					default: 1,
+					min: 1,
+					max: 512,
+					step: 1,
+					asInteger: true,
+				},
 				{
 					type: 'checkbox',
 					id: 'useSelected',
+					disableAutoExpression: true,
 					label: 'Use the selected output (ignores the output above)',
 					default: false,
 				},
@@ -219,6 +327,7 @@ export function UpdateActions(self: ModuleInstance): void {
 					id: 'cmd',
 					label: 'Lock',
 					default: 'toggle',
+					expressionDescription: "'toggle', 'lockDestination' or 'unlockDestination', in quotes",
 					choices: [
 						{ id: 'toggle', label: 'Toggle' },
 						{ id: 'lockDestination', label: 'Lock' },
@@ -243,6 +352,8 @@ export function UpdateActions(self: ModuleInstance): void {
 					label: 'Port',
 					default: 'selected',
 					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...portChoices(state)],
+					expressionDescription: LAST_PRESSED_EXPRESSION,
+					...SELECTED_PORT_VALUE,
 				},
 				{
 					type: 'dropdown',
@@ -270,6 +381,8 @@ export function UpdateActions(self: ModuleInstance): void {
 					label: 'Port',
 					default: 'selected',
 					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...portChoices(state)],
+					expressionDescription: LAST_PRESSED_EXPRESSION,
+					...SELECTED_PORT_VALUE,
 				},
 				{
 					type: 'dropdown',
@@ -290,10 +403,20 @@ export function UpdateActions(self: ModuleInstance): void {
 			description:
 				'Looks to the display as if its cable was pulled and put back, which can wake one that has lost its picture. Only this output is affected.',
 			options: [
-				{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs },
+				{
+					type: 'dropdown',
+					id: 'output',
+					isVisibleExpression: '!$(options:useSelected)',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
 				{
 					type: 'checkbox',
 					id: 'useSelected',
+					disableAutoExpression: true,
 					label: 'Use the selected output (ignores the output above)',
 					default: false,
 				},
@@ -308,7 +431,18 @@ export function UpdateActions(self: ModuleInstance): void {
 			name: 'Hotplug an input (HPD off, then on)',
 			description:
 				'Makes the source read the EDID again, such as after an EDID change it missed. Every output this input feeds drops its picture too. It does nothing useful if the source fakes its own EDID. There is no preset for this on purpose.',
-			options: [{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs }, hotplugSeconds],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'input',
+					label: 'Input',
+					default: 'I1',
+					choices: inputs,
+					expressionDescription: INPUT_EXPRESSION,
+					...INPUT_VALUE,
+				},
+				hotplugSeconds,
+			],
 			callback: async (action) => {
 				const input = portNumber(action.options.input, 'I')
 				await self.hotplug(input === undefined ? undefined : `I${input}`, Number(action.options.seconds))
@@ -317,7 +451,15 @@ export function UpdateActions(self: ModuleInstance): void {
 		rename: {
 			name: 'Rename a port',
 			options: [
-				{ type: 'dropdown', id: 'port', label: 'Port', default: 'I1', choices: portChoices(state) },
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'I1',
+					choices: portChoices(state),
+					expressionDescription: PORT_EXPRESSION,
+					...PORT_VALUE,
+				},
 				{ type: 'textinput', id: 'name', label: 'New name', default: 'New name' },
 			],
 			callback: async (action) => self.renamePort(String(action.options.port), String(action.options.name)),

@@ -51,6 +51,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses. Lines carry the connection's label as their source, and status messages name Lightware.
 - **feat(connection):** when the router turns the module away because all its connections are in use, the log and status say so once, and the module keeps retrying.
 - **feat(connection):** a lost connection is noticed within about 6 seconds without pressing anything, and the module keeps retrying until the router returns.
+- **feat(actions):** port dropdowns say what to type in expression mode, whole-number fields only take whole numbers, and an output is hidden when **Use the selected output** is ticked.
+- **perf(variables):** only variables that changed are sent, and router preset reads run one at a time, which matters most on large routers.
 - **feat(tools):** `tools/lw3-capture.mjs` reads a router's whole LW3 tree without changing anything, and `yarn fake-router` runs a fake one.
 
 ### Bug Fixes

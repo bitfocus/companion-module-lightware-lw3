@@ -1,4 +1,22 @@
-import { inputChoices, outputChoices, portChoices, portNumber, presetChoices } from './choices.js'
+import {
+	INPUT_EXPRESSION,
+	OUTPUT_EXPRESSION,
+	PORT_EXPRESSION,
+	LAST_PRESSED_EXPRESSION,
+	SELECTED_OUTPUT_EXPRESSION,
+	SELECTED_PORT_EXPRESSION,
+	inputChoices,
+	outputChoices,
+	portChoices,
+	portNumber,
+	portOf,
+	presetChoices,
+	INPUT_VALUE,
+	OUTPUT_VALUE,
+	PORT_VALUE,
+	SELECTED_OUTPUT_VALUE,
+	SELECTED_PORT_VALUE,
+} from './choices.js'
 import type ModuleInstance from './main.js'
 import type { PortId } from './protocol.js'
 
@@ -43,6 +61,8 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		default: 1,
 		min: 1,
 		max: 64,
+		step: 1,
+		asInteger: true,
 	}
 
 	const portStatus = (port: unknown) => {
@@ -59,8 +79,26 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			description: 'True if the input is routed to the output. 0 means the selected one.',
 			defaultStyle: { bgcolor: 0xff0000, color: 0x000000 },
 			options: [
-				{ type: 'number', id: 'input', label: 'Input (0 = selected)', default: 1, min: 0, max: 512 },
-				{ type: 'number', id: 'output', label: 'Output (0 = selected)', default: 1, min: 0, max: 512 },
+				{
+					type: 'number',
+					id: 'input',
+					label: 'Input (0 = selected)',
+					default: 1,
+					min: 0,
+					max: 512,
+					step: 1,
+					asInteger: true,
+				},
+				{
+					type: 'number',
+					id: 'output',
+					label: 'Output (0 = selected)',
+					default: 1,
+					min: 0,
+					max: 512,
+					step: 1,
+					asInteger: true,
+				},
 			],
 			callback: (feedback) => {
 				const input = Number(feedback.options.input) || state.selectedInput
@@ -73,7 +111,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Selected input',
 			description: 'True if this input is selected. It flashes while taking it would change the selected output.',
 			defaultStyle: { bgcolor: 0x00ff00, color: 0x000000 },
-			options: [{ type: 'number', id: 'port', label: 'Input', default: 1, min: 1, max: 512 }],
+			options: [{ type: 'number', id: 'port', label: 'Input', default: 1, min: 1, max: 512, step: 1, asInteger: true }],
 			callback: (feedback) => {
 				const input = Number(feedback.options.port)
 				if (state.selectedInput !== input) return false
@@ -85,7 +123,9 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Selected output',
 			description: 'True if this output is selected',
 			defaultStyle: { bgcolor: 0xffff00, color: 0x000000 },
-			options: [{ type: 'number', id: 'port', label: 'Output', default: 1, min: 1, max: 512 }],
+			options: [
+				{ type: 'number', id: 'port', label: 'Output', default: 1, min: 1, max: 512, step: 1, asInteger: true },
+			],
 			callback: (feedback) => state.selectedOutput === Number(feedback.options.port),
 		},
 		routedInput: {
@@ -93,7 +133,17 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Routed input',
 			description: 'True for the input on the selected output, right after an output was pressed',
 			defaultStyle: { bgcolor: 0x00ff00, color: 0x000000 },
-			options: [{ type: 'dropdown', id: 'input', label: 'Input', default: 'I1', choices: inputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'input',
+					label: 'Input',
+					default: 'I1',
+					choices: inputs,
+					expressionDescription: INPUT_EXPRESSION,
+					...INPUT_VALUE,
+				},
+			],
 			callback: (feedback) => {
 				const input = portNumber(feedback.options.input, 'I')
 				return input !== undefined && state.isRoutedInput(input)
@@ -104,7 +154,17 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Routed output',
 			description: 'True for each output carrying the selected input, right after an input was pressed',
 			defaultStyle: { bgcolor: 0xffff00, color: 0x000000 },
-			options: [{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
+			],
 			callback: (feedback) => {
 				const output = portNumber(feedback.options.output, 'O')
 				return output !== undefined && state.isRoutedOutput(output)
@@ -142,11 +202,15 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					label: 'Output',
 					default: 'O1',
 					choices: [{ id: 'selected', label: 'The selected output' }, ...outputs],
+					expressionDescription: SELECTED_OUTPUT_EXPRESSION,
+					...SELECTED_OUTPUT_VALUE,
 				},
 			],
 			callback: (feedback) => {
 				const output =
-					feedback.options.output === 'selected' ? state.selectedOutput : portNumber(feedback.options.output, 'O')
+					portOf(feedback.options.output) === 'selected'
+						? state.selectedOutput
+						: portNumber(feedback.options.output, 'O')
 				return output !== undefined && state.isLocked(output)
 			},
 		},
@@ -155,7 +219,17 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Staged output',
 			description: 'True if a route is staged for this output',
 			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
-			options: [{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
+			],
 			callback: (feedback) => {
 				const output = portNumber(feedback.options.output, 'O')
 				return output !== undefined && state.pendingInput(output) !== undefined
@@ -166,7 +240,17 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Selected output has a new input waiting',
 			description: 'True while the selected input is not yet on this selected output and is not staged',
 			defaultStyle: { bgcolor: 0xffff00, color: 0x000000 },
-			options: [{ type: 'dropdown', id: 'output', label: 'Output', default: 'O1', choices: outputs }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
+			],
 			callback: (feedback) =>
 				portNumber(feedback.options.output, 'O') === state.selectedOutput && state.nextInput !== undefined,
 		},
@@ -192,7 +276,15 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			description: 'True while the port is in this state. The presets show it as a coloured border.',
 			defaultStyle: { bgcolor: 0x007ee6, color: 0xffffff },
 			options: [
-				{ type: 'dropdown', id: 'port', label: 'Port', default: 'I1', choices: ports },
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'I1',
+					choices: ports,
+					expressionDescription: PORT_EXPRESSION,
+					...PORT_VALUE,
+				},
 				{
 					type: 'dropdown',
 					id: 'level',
@@ -219,7 +311,17 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Signal on a port',
 			description: 'True if the port has a valid signal. An output has one when a live input is routed to it.',
 			defaultStyle: { bgcolor: 0x008000, color: 0xffffff },
-			options: [{ type: 'dropdown', id: 'port', label: 'Port', default: 'I1', choices: ports }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'I1',
+					choices: ports,
+					expressionDescription: PORT_EXPRESSION,
+					...PORT_VALUE,
+				},
+			],
 			callback: (feedback) => portStatus(feedback.options.port)?.signal === true,
 		},
 		portConnected: {
@@ -227,7 +329,17 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			name: 'Cable connected to a port',
 			description: 'True if the router sees a source on this input, or a display on this output',
 			defaultStyle: { bgcolor: 0x008000, color: 0xffffff },
-			options: [{ type: 'dropdown', id: 'port', label: 'Port', default: 'O1', choices: ports }],
+			options: [
+				{
+					type: 'dropdown',
+					id: 'port',
+					label: 'Port',
+					default: 'O1',
+					choices: ports,
+					expressionDescription: PORT_EXPRESSION,
+					...PORT_VALUE,
+				},
+			],
 			callback: (feedback) => portStatus(feedback.options.port)?.connected === true,
 		},
 		slotLive: {
@@ -297,11 +409,14 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					label: 'Port',
 					default: 'selected',
 					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...ports],
+					expressionDescription: LAST_PRESSED_EXPRESSION,
+					...SELECTED_PORT_VALUE,
 				},
 			],
 			callback: (feedback) => {
-				const port = feedback.options.port === 'selected' ? state.lastSelectedPort : feedback.options.port
-				if (typeof port !== 'string' || !/^[IO]\d+$/.test(port)) return false
+				const found = portOf(feedback.options.port)
+				const port = found === 'selected' ? state.lastSelectedPort : found
+				if (port === undefined) return false
 				const number = Number(port.slice(1))
 				return port.startsWith('I') ? state.isInputLocked(number) : state.isFrozen(number)
 			},
@@ -318,11 +433,14 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					label: 'Port',
 					default: 'selected',
 					choices: [{ id: 'selected', label: 'The input or output pressed last' }, ...ports],
+					expressionDescription: LAST_PRESSED_EXPRESSION,
+					...SELECTED_PORT_VALUE,
 				},
 			],
 			callback: (feedback) => {
-				const port = feedback.options.port === 'selected' ? state.lastSelectedPort : feedback.options.port
-				return typeof port === 'string' && /^[IO]\d+$/.test(port) && state.isMuted(port as PortId)
+				const found = portOf(feedback.options.port)
+				const port = found === 'selected' ? state.lastSelectedPort : found
+				return port !== undefined && state.isMuted(port)
 			},
 		},
 		hotplugging: {
@@ -337,16 +455,15 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					label: 'Port',
 					default: 'selected',
 					choices: [{ id: 'selected', label: 'The selected output' }, ...ports],
+					expressionDescription: SELECTED_PORT_EXPRESSION,
+					...SELECTED_PORT_VALUE,
 				},
 			],
 			callback: (feedback) => {
-				const port =
-					feedback.options.port === 'selected'
-						? state.selectedOutput === undefined
-							? undefined
-							: `O${state.selectedOutput}`
-						: feedback.options.port
-				return typeof port === 'string' && state.hotplugging.has(port as PortId)
+				const found = portOf(feedback.options.port)
+				const selected: PortId | undefined = state.selectedOutput === undefined ? undefined : `O${state.selectedOutput}`
+				const port = found === 'selected' ? selected : found
+				return port !== undefined && state.hotplugging.has(port)
 			},
 		},
 		presetLive: {

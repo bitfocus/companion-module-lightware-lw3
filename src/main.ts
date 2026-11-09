@@ -9,6 +9,7 @@ import {
 	type SomeCompanionConfigField,
 } from '@companion-module/base'
 import { UpdateActions, type ActionsSchema, type LockCommand, type MuteCommand, type PowerCommand } from './actions.js'
+import { portOf } from './choices.js'
 import { Lw3Client } from './client.js'
 import {
 	AUTO_ROUTE_LABELS,
@@ -108,6 +109,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#lostAt: number | undefined
 	/** Whether the router has said anything since this connection opened */
 	#heard = false
+	#presetRead: Promise<void> | undefined
+	#presetReadAgain = false
+	/** What was last sent, so only what changes is sent again */
+	readonly #sentValues = new Map<string, unknown>()
 	#connected = false
 	/** Said once per outage, so retrying doesn't repeat it */
 	#refusedSaid = false
@@ -134,7 +139,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	async init(config: ModuleConfig): Promise<void> {
 		this.config = config
 		this.#publishDefinitions(true)
-		this.setVariableValues({ ...portNameValues(this.state), ...selectionValues(this.state) })
+		this.#publish({ ...portNameValues(this.state), ...selectionValues(this.state) })
 		this.#publishAutoRouteMode()
 		this.#connect()
 	}
@@ -409,7 +414,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	#publishAutoRouteMode(): void {
-		this.setVariableValues({ auto_route_mode: AUTO_ROUTE_LABELS[this.autoRouteMode] })
+		this.#publish({ auto_route_mode: AUTO_ROUTE_LABELS[this.autoRouteMode] })
 		this.checkFeedbacks('autoRouteMode')
 	}
 
@@ -805,10 +810,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** `selected` is the input or output pressed last. A locked input freezes every output it is on. */
 	async lockPort(target: string, command: 'lock' | 'unlock' | 'toggle'): Promise<void> {
 		this.disarmSave()
-		const port =
-			target === 'selected' ? this.state.lastSelectedPort : /^[IO]\d+$/.test(target) ? (target as PortId) : undefined
+		const port = portOf(target) === 'selected' ? this.state.lastSelectedPort : (portOf(target) as PortId | undefined)
 		if (port === undefined) {
-			this.log('warn', 'Select an input or an output before locking')
+			this.log(
+				'warn',
+				portOf(target) === 'selected'
+					? 'Select an input or an output before locking'
+					: `"${target}" isn't a port: use I1 or O1`,
+			)
 			return
 		}
 		const name = this.state.portName(port)
@@ -828,10 +837,14 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** `selected` is the input or output pressed last */
 	async mutePort(target: string, command: MuteCommand): Promise<void> {
 		this.disarmSave()
-		const port =
-			target === 'selected' ? this.state.lastSelectedPort : /^[IO]\d+$/.test(target) ? (target as PortId) : undefined
+		const port = portOf(target) === 'selected' ? this.state.lastSelectedPort : (portOf(target) as PortId | undefined)
 		if (port === undefined) {
-			this.log('warn', 'Select an input or an output before muting')
+			this.log(
+				'warn',
+				portOf(target) === 'selected'
+					? 'Select an input or an output before muting'
+					: `"${target}" isn't a port: use I1 or O1`,
+			)
 			return
 		}
 		const name = this.state.portName(port)
@@ -934,11 +947,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			.map(([output]) => this.state.outputName(output))
 	}
 
-	async renamePort(port: string, name: string): Promise<void> {
+	async renamePort(typedPort: string, name: string): Promise<void> {
 		const typed = cleanName(name)
 		const clean = plainName(typed)
-		if (!/^[IO]\d+$/.test(port) || clean === '') {
-			this.log('warn', `Can't rename ${port} to "${name}"`)
+		const port = portOf(typedPort)
+		if (port === undefined || port === 'selected' || clean === '') {
+			this.log('warn', `Can't rename ${typedPort} to "${name}"`)
 			return
 		}
 		if (clean !== typed)
@@ -946,7 +960,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (clean.length > MAX_NAME_LENGTH) {
 			this.log('warn', `The router only keeps the first ${MAX_NAME_LENGTH} characters of "${clean}"`)
 		}
-		const error = await this.#rename(port as PortId, clean)
+		const error = await this.#rename(port, clean)
 		if (error) this.log('warn', `The router refused the name "${clean}": ${error}`)
 	}
 
@@ -988,7 +1002,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const standby = value === 'STANDBY'
 		const changed = standby !== this.state.standby
 		this.state.standby = standby
-		this.setVariableValues({ power: standby ? 'STANDBY' : 'NORMAL' })
+		this.#publish({ power: standby ? 'STANDBY' : 'NORMAL' })
 		this.checkFeedbacks('routerStandby')
 		// again on every read, as a reconnect sets the status back to OK
 		if (standby) this.updateStatus(InstanceStatus.UnknownWarning, 'Lightware router in standby')
@@ -1157,7 +1171,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (!version || !this.state.firmware || version === this.state.firmware) return
 		this.log('info', `Router firmware is now ${version}, was ${this.state.firmware}. Reading the router again.`)
 		this.state.firmware = version
-		this.setVariableValues({ firmware: version })
+		this.#publish({ firmware: version })
 		await this.#readRouter()
 	}
 
@@ -1170,6 +1184,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** Subscribe first, so nothing that changes during the read is missed */
 	async #readRouter(): Promise<void> {
+		// a different router may have had other variables defined, so everything goes out afresh
+		this.#sentValues.clear()
 		this.#reading = true
 		const socket = this.#socket
 		const product = await this.#client.request(Cmd.productName)
@@ -1187,7 +1203,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 		this.state.model = parseProperty(product[0] ?? '')?.value ?? ''
 		this.state.firmware = parseProperty(firmware?.[0] ?? '')?.value ?? ''
-		this.setVariableValues({
+		this.#publish({
 			model: this.state.model,
 			firmware: this.state.firmware,
 			inputs: this.state.inputCount,
@@ -1234,7 +1250,24 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return true
 	}
 
+	/** One at a time: a change while one is running is covered by a single read after it */
 	async #readPresets(): Promise<void> {
+		if (this.#presetRead) {
+			this.#presetReadAgain = true
+			return this.#presetRead
+		}
+		this.#presetRead = (async () => {
+			do {
+				this.#presetReadAgain = false
+				await this.#readPresetsOnce()
+			} while (this.#presetReadAgain)
+		})().finally(() => {
+			this.#presetRead = undefined
+		})
+		return this.#presetRead
+	}
+
+	async #readPresetsOnce(): Promise<void> {
 		const listing = await this.#client.request(Cmd.presets)
 		if (listing === undefined) return
 		const presets = new Map<string, (number | undefined)[]>()
@@ -1282,7 +1315,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	#slotsChanged(): void {
-		this.setVariableValues(slotValues(this.state))
+		this.#publish(slotValues(this.state))
 		this.checkFeedbacks('slotLive', 'slotStaged', 'slotEmpty')
 	}
 
@@ -1346,7 +1379,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const { state } = this
 		if (name === state.routerName) return
 		state.routerName = name
-		this.setVariableValues({ router_name: name })
+		this.#publish({ router_name: name })
 		if (!this.#reading) this.log('info', `Router name is now "${name}"`)
 	}
 
@@ -1358,7 +1391,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.#portsDirty = true
 			this.#publishVariableDefinitions()
 			this.#scheduleDefinitions()
-			this.setVariableValues({ outputs: state.outputCount, ...portNameValues(state) })
+			this.#publish({ outputs: state.outputCount, ...portNameValues(state) })
 		}
 		let changed = false
 		entries.forEach((entry, index) => {
@@ -1382,7 +1415,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			}
 		})
 		if (!changed) return
-		this.setVariableValues({ ...routeValues(state), ...selectionValues(state) })
+		this.#publish({ ...routeValues(state), ...selectionValues(state) })
 		this.#syncFlash()
 		this.checkFeedbacks(
 			'route',
@@ -1403,7 +1436,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#applyDestinationStatus(value: string): void {
 		const locks = this.#applyStatus(value, this.state.destinationStatus, 'O')
 		if (locks.changed) this.checkFeedbacks('portSignal', 'portConnected', 'portLegend')
-		if (locks.lockChanged || locks.muteChanged) this.setVariableValues(selectionValues(this.state))
+		if (locks.lockChanged || locks.muteChanged) this.#publish(selectionValues(this.state))
 		if (locks.lockChanged) this.checkFeedbacks('outputLocked', 'portLocked')
 		if (locks.muteChanged) this.checkFeedbacks('portMuted')
 	}
@@ -1415,16 +1448,16 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.#portsDirty = true
 			this.#publishVariableDefinitions()
 			this.#scheduleDefinitions()
-			this.setVariableValues({ inputs: this.state.inputCount, ...portNameValues(this.state) })
+			this.#publish({ inputs: this.state.inputCount, ...portNameValues(this.state) })
 		}
 		const status = this.#applyStatus(value, this.state.sourceStatus, 'I')
 		if (status.lockChanged) {
 			// a locked input freezes the outputs it is on, which the router doesn't mark on them
-			this.setVariableValues(selectionValues(this.state))
+			this.#publish(selectionValues(this.state))
 			this.checkFeedbacks('portLocked')
 		}
 		if (status.muteChanged) {
-			this.setVariableValues(selectionValues(this.state))
+			this.#publish(selectionValues(this.state))
 			this.checkFeedbacks('portMuted')
 		}
 		if (status.changed) {
@@ -1488,7 +1521,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.log('info', `${port} renamed: "${before.name}" to "${name.name}"`)
 		}
 		if (before?.name === name.name) return
-		this.setVariableValues({
+		this.#publish({
 			[nameVar(port)]: name.name,
 			...routeValues(this.state),
 			...selectionValues(this.state),
@@ -1500,7 +1533,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	// ---- derived updates --------------------------------------------------------------------
 
 	#selectionChanged(): void {
-		this.setVariableValues(selectionValues(this.state))
+		this.#publish(selectionValues(this.state))
 		// start from the bright half, so a press shows straight away
 		this.#stopFlash()
 		this.#syncFlash()
@@ -1519,13 +1552,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	#stagedChanged(): void {
-		this.setVariableValues(routeValues(this.state))
+		this.#publish(routeValues(this.state))
 		this.#syncFlash()
 		this.checkFeedbacks('outputStaged', 'stagedWaiting', 'stagedRoutes', 'presetStaged', 'slotStaged')
 	}
 
 	#presetContentsChanged(): void {
-		this.setVariableValues({ live_preset: this.state.livePreset ?? 'None', ...slotValues(this.state) })
+		this.#publish({ live_preset: this.state.livePreset ?? 'None', ...slotValues(this.state) })
 		this.checkFeedbacks('presetLive', 'slotLive', 'slotEmpty')
 	}
 
@@ -1551,6 +1584,19 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	// ---- definitions ------------------------------------------------------------------------
+
+	/** On a big router every route change would otherwise resend three variables for every output */
+	#publish(values: VariablesSchema): void {
+		const changed: VariablesSchema = {}
+		let any = false
+		for (const [id, value] of Object.entries(values)) {
+			if (this.#sentValues.get(id) === value) continue
+			this.#sentValues.set(id, value)
+			changed[id] = value
+			any = true
+		}
+		if (any) this.setVariableValues(changed)
+	}
 
 	#publishVariableDefinitions(): void {
 		UpdateVariableDefinitions((definitions) => this.setVariableDefinitions(definitions), this.state)
