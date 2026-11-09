@@ -312,6 +312,8 @@ h1 small.on { color: var(--good); }
 }
 dialog ul { max-height: 50vh; overflow: auto; padding-left: 18px; }
 dialog .warn { color: var(--bad); }
+#preset-name-input { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; }
+#preset-name-problem { min-height: 1.3em; }
 </style>
 </head>
 <body>
@@ -370,6 +372,15 @@ dialog .warn { color: var(--bad); }
 <p class="note">Live means changes made on the router appear here as they happen. Not live means this browser can't reach the router itself: everything still works, but press Reload to see them. The router never announces stored EDIDs, so they are read again when you click the filter box.</p>
 </details>
 </main>
+<dialog id="preset-name">
+<form method="dialog">
+<label id="preset-name-title" for="preset-name-input"></label>
+<input id="preset-name-input" maxlength="46" autocomplete="off" autocapitalize="off" spellcheck="false">
+<p id="preset-name-problem" class="warn" role="alert"></p>
+<button id="preset-name-send" value="send">Send to the router</button>
+<button id="preset-name-cancel" type="button">Cancel</button>
+</form>
+</dialog>
 <dialog id="confirm">
 <p id="confirm-title"></p>
 <ul id="confirm-list"></ul>
@@ -860,7 +871,9 @@ async function loadPresets() {
 	const data = await fetch(base + 'presets').then((response) => response.json()).catch(() => undefined)
 	if (data && data.presets) renderPresets(data.presets)
 }
+let presetNames = []
 function renderPresets(presets) {
+	presetNames = presets.map((preset) => preset.name)
 	const body = $('presets').tBodies[0]
 	body.replaceChildren(...presets.map((preset) => {
 		const tr = document.createElement('tr')
@@ -889,25 +902,61 @@ function renderPresets(presets) {
 		return tr
 	}))
 }
-async function presetPost(action, body, done) {
+async function presetPost(action, body, done, show) {
 	const result = await post('preset/' + action, body).catch(() => undefined)
 	if (!result || !result.ok) {
-		say('The router did not do that: ' + ((result && result.reply.error) || 'cannot reach Companion'), true)
+		const why = 'The router did not do that: ' + ((result && result.reply.error) || 'cannot reach Companion')
+		if (show) show(why)
+		else say(why, true)
 		return false
 	}
 	renderPresets(result.reply.presets)
 	say(done)
 	return true
 }
+/** What's wrong with a new preset name, or nothing. The router's own preset list is checked as well. */
+function presetNameProblem(name, original) {
+	if (!name) return 'Type a name.'
+	if (!PRESET_NAME.test(name)) return 'Only letters, digits, - and _ can be used, up to 46 of them. No spaces.'
+	if (name !== original && presetNames.includes(name)) return name + ' already exists.'
+	return ''
+}
+/** Stays open, saying what's wrong, until the name is good and the router has accepted it */
+function askPresetName(title, start, original, send) {
+	const dialog = $('preset-name')
+	const input = $('preset-name-input')
+	const problem = $('preset-name-problem')
+	const button = $('preset-name-send')
+	$('preset-name-title').textContent = title
+	input.value = start
+	const check = () => {
+		const name = input.value.trim()
+		const wrong = name === original ? 'That is its name already.' : presetNameProblem(name, original)
+		// nothing shows until something has been typed, so the dialog doesn't open with a complaint
+		problem.textContent = input.value === start ? '' : wrong
+		button.disabled = wrong !== ''
+	}
+	input.oninput = check
+	check()
+	$('preset-name-cancel').onclick = () => dialog.close()
+	dialog.querySelector('form').onsubmit = async (event) => {
+		event.preventDefault()
+		if (button.disabled) return
+		button.disabled = true
+		problem.textContent = ''
+		if (await send(input.value.trim(), (why) => { problem.textContent = why })) dialog.close()
+		else button.disabled = false
+	}
+	dialog.showModal()
+	input.select()
+}
 async function savePreset(name) {
 	if (!(await ask('Overwrite ' + name + '?', ['With what is routed now'], 'Its old routes are lost. Anything staged is not saved.'))) return
 	await presetPost('save', { name }, name + ' saved.')
 }
-async function copyPreset(name, rename) {
-	const to = (prompt((rename ? 'Rename ' : 'Copy ') + name + ' to:', name + (rename ? '' : '-COPY')) || '').trim()
-	if (!to || to === name) return
-	if (!PRESET_NAME.test(to)) return say('A preset name can use up to 46 letters, digits, - and _.', true)
-	await presetPost(rename ? 'rename' : 'copy', { name, to }, name + (rename ? ' renamed to ' : ' copied to ') + to + '.')
+function copyPreset(name, rename) {
+	askPresetName((rename ? 'Rename ' : 'Copy ') + name + ' to:', name + (rename ? '' : '-COPY'), name, (to, show) =>
+		presetPost(rename ? 'rename' : 'copy', { name, to }, name + (rename ? ' renamed to ' : ' copied to ') + to + '.', show))
 }
 async function deletePreset(name) {
 	if (!(await ask('Delete ' + name + '?', [name], 'Buttons that recall it will stop working.'))) return
@@ -915,7 +964,8 @@ async function deletePreset(name) {
 }
 $('create-preset').addEventListener('click', async () => {
 	const name = $('new-preset').value.trim()
-	if (!PRESET_NAME.test(name)) return say('A preset name can use up to 46 letters, digits, - and _.', true)
+	const wrong = presetNameProblem(name, '')
+	if (wrong) return say(wrong, true)
 	if (!(await ask('Create ' + name + '?', ['From what is routed now'], ''))) return
 	if (await presetPost('create', { name }, name + ' created.')) $('new-preset').value = ''
 })
