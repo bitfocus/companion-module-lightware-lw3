@@ -66,19 +66,22 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 ### Not tested
 
 - Soft reset.
-- How many routes one command can hold, which matters for a staged preset on a big router.
 - Whether the router announces a lock changed elsewhere.
 - How many router presets the router can hold, and the longest name it allows. 46 characters was accepted.
-- Any router other than the MX2-8x8-HDMI20-L and MX2-8X8-HDMI20-AUDIO, any firmware other than 1.10.1b4, and any version of Companion other than 5.1.1 and 5.1.2. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
+- Any router other than the MX2-8x8-HDMI20-L, MX2-8X8-HDMI20-AUDIO and MX2-16x16-HDMI20-R, firmware other than 1.10.1b4 on the first two and 1.11.3b5 on the 16x16, and any version of Companion other than 5.1.1 and 5.1.2. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
+- Standby and hotplug with real devices attached on the MX2-16x16-HDMI20-R.
+- How many routes one command can hold beyond 16, which matters for a 24x24 or 48x48.
 - The audio settings of the MX2-8X8-HDMI20-AUDIO, which the module leaves alone.
 - Upgrading a v2 configuration.
 - How many subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
-- The connection limit on other models.
+- The connection limit on models other than the MX2-8x8-HDMI20-L and MX2-16x16-HDMI20-R.
 - The ports page's WebSocket against the fake router, which has none by design.
 - Whether the router announces a mute made from its front panel. Mutes made by command are announced.
 - Hotplugging an input from the module, rather than by command. The command was tested with a MacBook on Input 1.
 
 ### Tested on hardware
+
+The MX2-16x16-HDMI20-R on firmware 1.11.3b5, in Companion 5.1.2 with the built package: connecting, input and output buttons with the status border, holding an input for every output, all 16 front-panel preset buttons, saving to them, and the ports page at 32 rows, including on a phone. A command line test of its spare ports matched the L's results for every LW3 command the module uses, took all 16 outputs in one command, and found the same limit of 15 connections.
 
 The MX2-8X8-HDMI20-AUDIO in Companion 5.1.2, with the built package: routing, TAKE, holding an input for every output, locks, mutes, hotplug, saving router and front-panel presets, and the ports page, including on a phone. A command line test of its spare ports matched the L's results for every LW3 command the module uses. Standby wasn't tried on it.
 

@@ -58,7 +58,7 @@ export function GetConfigFields(label: string, router: string): SomeCompanionCon
 			width: 12,
 			label: 'Information',
 			value:
-				'Connects to a Lightware matrix router over LW3. Only the MX2-8x8-HDMI20-L and MX2-8X8-HDMI20-AUDIO have been tested so far. See the help for what that means for other models.',
+				'Connects to a Lightware matrix router over LW3. Only the MX2-8x8-HDMI20-L, MX2-8X8-HDMI20-AUDIO and MX2-16x16-HDMI20-R have been tested so far. See the help for what that means for other models.',
 		},
 	]
 }

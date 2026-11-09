@@ -1,4 +1,4 @@
-Version 3.0.0 is a rewrite, built from measurements of an MX2-8x8-HDMI20-L on firmware 1.10.1b4, and tested on Companion 5.1.2 with it and with an MX2-8X8-HDMI20-AUDIO on the same firmware. Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log says so.
+Version 3.0.0 is a rewrite, built from measurements of an MX2-8x8-HDMI20-L on firmware 1.10.1b4, and tested on Companion 5.1.2 with it, with an MX2-8X8-HDMI20-AUDIO on the same firmware, and with an MX2-16x16-HDMI20-R on firmware 1.11.3b5. Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log says so.
 
 ## SETUP
 
