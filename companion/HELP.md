@@ -1,8 +1,17 @@
-Version 3.0.0 is a rewrite, built from measurements of an MX2-8x8-HDMI20-L on firmware 1.10.1b4, and tested on Companion 5.1.2 with it, with an MX2-8X8-HDMI20-AUDIO on the same firmware, with an MX2-16x16-HDMI20-R on firmware 1.11.3b5, and with an MX2-24x24-HDMI20-R on firmware 1.12.0b8. Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log says so.
+Version 3.0.0 is a rewrite, built from measurements of real routers. It has been tested on Companion 5.1.2 with:
+
+- MX2-8x8-HDMI20-L, firmware 1.10.1b4
+- MX2-8X8-HDMI20-AUDIO, firmware 1.10.1b4
+- MX2-16x16-HDMI20-R, firmware 1.11.3b5
+- MX2-24x24-HDMI20-R, firmware 1.12.0b8
+
+Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log says so.
 
 ## SETUP
 
-The connection settings say which router it's connected to, with its model, firmware and size.
+The connection settings say which router it's connected to, with its model, name, firmware and size.
+
+**These details don't update while the settings are open.** Companion only asks a module for that text when the settings open or are saved, and a module has no way to update it afterwards. So after changing the router's IP, the settings say "Connecting" even once the router has answered. Close and reopen them, or refresh the browser, to see the router's details. The link in that message goes to the connection's variables, which do update live, and the log shows the router as soon as it's found.
 
 Enter the router's IP address. LW3 uses TCP port 6107, which is the default.
 
