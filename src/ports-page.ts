@@ -24,6 +24,8 @@ export interface OutputRow {
 
 export interface PortsSnapshot {
 	routerName: string
+	/** What a router is called out of the box */
+	model: string
 	standby: boolean
 	inputs: InputRow[]
 	outputs: OutputRow[]
@@ -52,6 +54,9 @@ export interface PortsHost {
 	deleteEdid(slot: string): Promise<string | undefined>
 	/** Returns why it didn't happen, if it didn't */
 	hotplug(port: string): Promise<string | undefined>
+	readClock(): Promise<{ router?: string; companion: string }>
+	/** Returns why it didn't happen, if it didn't */
+	setClock(): Promise<string | undefined>
 	/** Names of the outputs an input feeds, which a hotplug on it drops too */
 	outputsFedBy(input: number): string[]
 	/** As the module knows them, which follows the router's announcements */
@@ -229,6 +234,7 @@ export async function handlePortsRequest(
 			: json(503, { error: 'Not connected to the router' })
 	}
 	if (path === '/presets' && request.method === 'GET') return json(200, { presets: host.presets() })
+	if (path === '/clock' && request.method === 'GET') return json(200, await host.readClock())
 	if (path === '/feeds' && request.method === 'GET') {
 		const input = Number(request.query.input)
 		if (!Number.isInteger(input) || input < 1) return json(400, { error: 'The request needs an input number' })
@@ -246,6 +252,10 @@ export async function handlePortsRequest(
 	if (path === '/edid/store' && request.method === 'POST') return store(host, request)
 	if (path === '/edid/delete' && request.method === 'POST') return remove(host, request)
 	if (path.startsWith('/preset/') && request.method === 'POST') return presetAction(host, path.slice(8), request)
+	if (path === '/clock' && request.method === 'POST') {
+		const error = await host.setClock()
+		return error ? json(502, { error }) : json(200, {})
+	}
 	if (path === '/hotplug' && request.method === 'POST') {
 		const { port } = parseBody(request) ?? {}
 		if (typeof port !== 'string' || !/^[IO]\d+$/.test(port)) return json(400, { error: 'The request needs a port' })
@@ -304,6 +314,8 @@ h1 small.on { color: var(--good); }
 .filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
 .filter input { flex: 1 1 200px; width: auto; max-width: 360px; }
 .note { color: GrayText; margin: 4px 0; }
+.clock { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 4px 0 8px; }
+.clock-time { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .store { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .store select { width: auto; max-width: 100%; flex: 1 1 240px; }
 @media (max-width: 600px) {
@@ -323,6 +335,7 @@ dialog .warn { color: var(--bad); }
 <button id="reload">Reload</button>
 <button id="revert" disabled title="Fill in the values from before the last Apply">Revert last Apply</button>
 <button id="copy" title="Copy every port, to paste into a spreadsheet">Copy all</button>
+<button id="default-names" title="Fill in Input 1, Output 1 and the model as the router name. Nothing is sent until Apply">Default names</button>
 <div id="message"></div>
 </header>
 <main>
@@ -366,9 +379,17 @@ dialog .warn { color: var(--bad); }
 <button id="delete">Delete</button>
 </div>
 </details>
+<details class="region" id="region-clock" open><summary><h2>Router clock</h2></summary>
+<div class="clock">
+<span>Router</span><span class="clock-time" id="clock-router">Reading the clock...</span>
+<span>Companion</span><span class="clock-time" id="clock-companion"></span>
+</div>
+<p><button id="clock-set">Set to Companion's time</button></p>
+<p class="note">The router has no time zone, so this needs doing again when the clocks change.</p>
+</details>
 <details class="region" id="region-about" open><summary><h2>About this page</h2></summary>
 <p class="note">Changes here go to the router straight away, once confirmed.</p>
-<p class="note">Hotplug makes a port look unplugged for 2 seconds. On an output it can wake a display that lost its picture. On an input it makes the source read its EDID again, and every output that input feeds drops too.</p>
+<p class="note">Hotplug drops a port for a few seconds. On an output it can wake a display that lost its picture. On an input the source may read its EDID again, a computer may rearrange its screens, and every output that input feeds drops too.</p>
 <p class="note">Live means changes made on the router appear here as they happen. Not live means this browser can't reach the router itself: everything still works, but press Reload to see them. The router never announces stored EDIDs, so they are read again when you click the filter box.</p>
 </details>
 </main>
@@ -982,8 +1003,9 @@ async function hotplugPort(row, button) {
 			: outputs.length
 				? 'These outputs drop their picture too: ' + outputs.join(', ') + '.'
 				: 'This input feeds no outputs.'
+		warning += ' A computer on this input may rearrange its screens.'
 	}
-	if (!(await ask('Hotplug ' + label + '?', [row.kind === 'I' ? 'Hotplug off for 2 seconds, then on' : '5V off for 2 seconds, then on'], warning))) return
+	if (!(await ask('Hotplug ' + label + '?', [row.kind === 'I' ? 'Drops this input for a few seconds' : 'Drops this output for a few seconds'], warning))) return
 	button.disabled = true
 	setStatus(row, 'Hotplugging...')
 	const result = await post('hotplug', { port: row.port }).catch(() => undefined)
@@ -1010,7 +1032,42 @@ $('delete').addEventListener('click', () => {
 	slotAction('edid/delete', { slot }, 'Delete this stored EDID?', [edidLabel(slot)], warning)
 })
 
+let clock
+const clockText = (time) => new Date(time).toISOString().slice(0, 19).replace('T', ' ')
+function clockGap(difference) {
+	const minutes = Math.round(Math.abs(difference) / 60000)
+	if (minutes < 1) return ''
+	const hours = Math.floor(minutes / 60)
+	return ' (' + (hours ? hours + ' h ' : '') + (minutes % 60) + ' min ' + (difference > 0 ? 'fast' : 'slow') + ')'
+}
+function showClock() {
+	const router = clock
+		? clockText(clock.router + Date.now() - clock.at) + clockGap(clock.router - clock.companion)
+		: "The router didn't say what time it is"
+	const companion = clock ? clockText(clock.companion + Date.now() - clock.at) : '-'
+	if ($('clock-router').textContent !== router) $('clock-router').textContent = router
+	if ($('clock-companion').textContent !== companion) $('clock-companion').textContent = companion
+}
+async function loadClock() {
+	const reply = await fetch(base + 'clock').then((response) => response.json()).catch(() => undefined)
+	clock = reply && reply.router
+		? { router: Date.parse(reply.router + 'Z'), companion: Date.parse(reply.companion + 'Z'), at: Date.now() }
+		: undefined
+	showClock()
+}
+setInterval(() => { if (clock) showClock() }, 1000)
+$('clock-set').addEventListener('click', async () => {
+	$('clock-set').disabled = true
+	const result = await post('clock', {}).catch(() => undefined)
+	$('clock-set').disabled = false
+	if (!result || !result.ok) return say((result && result.reply.error) || 'Cannot reach Companion', true)
+	say("Router clock set to Companion's time.")
+	// measured: the router's clock shows the new time a moment after it answers
+	setTimeout(loadClock, 1000)
+})
+
 async function load() {
+	void loadClock()
 	say('Reading the router...')
 	let response
 	try {
@@ -1162,6 +1219,14 @@ document.addEventListener('visibilitychange', () => {
 		stopLive()
 		missedChanges = true
 	} else startLive()
+})
+$('default-names').addEventListener('click', () => {
+	for (const row of rows) {
+		row.name.value = row.kind === 'R' ? snapshot.model : (row.kind === 'I' ? 'Input ' : 'Output ') + row.number
+		setStatus(row, '')
+		refreshRow(row)
+	}
+	say('Default names filled in. Press Apply to send them, or Reload to forget them.')
 })
 $('reload').addEventListener('click', load)
 load()

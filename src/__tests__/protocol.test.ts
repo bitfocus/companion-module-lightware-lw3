@@ -17,6 +17,7 @@ import {
 	portLegend,
 	parseProperty,
 	parseSource,
+	localClock,
 } from '../protocol.js'
 
 describe('commands', () => {
@@ -50,6 +51,12 @@ describe('commands', () => {
 
 	it('keeps the number before a name', () => {
 		expect(Cmd.rename('O7', '2', 'Stage left')).toBe('SET /MEDIA/NAMES/VIDEO.O7=2;Stage left')
+	})
+
+	it('sends local time labelled as UTC, as the router has no time zone', () => {
+		expect(localClock(new Date(2026, 10, 10, 7, 42, 48))).toBe('2026-11-10T07:42:48.000Z')
+		expect(localClock(new Date(2026, 6, 1, 12, 0, 0))).toBe('2026-07-01T12:00:00.000Z')
+		expect(Cmd.setClock('2026-11-10T07:42:48.000Z')).toBe('CALL /MANAGEMENT/DATETIME:setTime(2026-11-10T07:42:48.000Z)')
 	})
 
 	it('uses the mute and hotplug forms measured on the router', () => {

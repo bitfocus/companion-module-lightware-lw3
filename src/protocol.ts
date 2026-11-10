@@ -24,6 +24,16 @@ export const MAX_ROUTER_NAME_LENGTH = 39
 /** Measured: the router stops seeing a display about 1 s after its 5V goes off, so 2 s is enough */
 export const HOTPLUG_DEFAULT_SECONDS = 2
 export const HOTPLUG_MAX_SECONDS = 10
+/** How long a DisplayPort link train shows as running. Measured at about 3 s from the call to the picture being back. */
+export const LINK_TRAIN_MS = 3000
+
+/**
+ * The time on this computer in the router's format. Measured: the router keeps it as sent and has no time
+ * zone, so, as its own web page does, this sends local time labelled as UTC.
+ */
+export function localClock(now: Date): string {
+	return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString()
+}
 
 /** Paths are built from preset names, so a name that could change the command never reaches the router */
 /** The router took 46 characters, and spaces and dots too, but those would end up inside commands */
@@ -68,6 +78,8 @@ export const Cmd = {
 	/** NORMAL or STANDBY. Measured: announced only to `OPEN /MANAGEMENT/POWER`. */
 	power: `GET ${POWER}.Operation`,
 	subscribePower: `OPEN ${POWER}`,
+	clock: `GET /MANAGEMENT/DATETIME.CurrentTime`,
+	setClock: (time: string): string => `CALL /MANAGEMENT/DATETIME:setTime(${time})`,
 	standby: `CALL ${POWER}:standby()`,
 	wakeUp: `CALL ${POWER}:wakeUp()`,
 	inputHdcp: (input: number): string => `GET ${PORTS}/I${input}/SETTINGS.HdcpVersion`,
@@ -112,12 +124,14 @@ export const Cmd = {
 	mute: (port: PortId): string => `CALL ${XP}:${port.startsWith('I') ? 'muteSource' : 'muteDestination'}(${port})`,
 	unmute: (port: PortId): string =>
 		`CALL ${XP}:${port.startsWith('I') ? 'unmuteSource' : 'unmuteDestination'}(${port})`,
+	/** What a port can do. Which settings it lists says how it hotplugs, and a router may mix port types. */
+	portSettings: (port: PortId): string => `GET ${PORTS}/${port}/SETTINGS.*`,
+	/** DisplayPort has no 5V or HPD setting. This drops the link and brings it back. */
+	linkTrain: (port: PortId): string => `CALL ${PORTS}/${port}/SETTINGS:dpLinkTrain()`,
 	/** An input's hotplug: OFF tells the source the router has gone, AUTO follows the source's 5V */
-	inputHotplug: (input: number): string => `GET ${PORTS}/I${input}/SETTINGS.EnableHPD`,
 	setInputHotplug: (input: number, on: boolean): string =>
 		`SET ${PORTS}/I${input}/SETTINGS.EnableHPD=${on ? 'AUTO' : 'OFF'}`,
 	/** An output's 5V: off looks to a display as if its cable was pulled */
-	output5v: (output: number): string => `GET ${PORTS}/O${output}/SETTINGS.Enable5V`,
 	setOutput5v: (output: number, on: boolean): string => `SET ${PORTS}/O${output}/SETTINGS.Enable5V=${on}`,
 	unlock: (output: number): string => `CALL ${XP}:unlockDestination(O${output})`,
 	rename: (port: PortId, prefix: string, name: string): string => `SET ${NAMES}.${port}=${prefix};${name}`,
@@ -239,7 +253,8 @@ export type PortLegend = (typeof PORT_LEGENDS)[number]
 /**
  * Follows the router's web interface. The first hex digit of its GUI status has the signal type in the
  * low two bits, 3 being HDMI, and the clock in the next two, 3 being up to 18G. Only `0`, `A` and `F`
- * have been seen, and only `A` with a real DVI source. DisplayPort has its own legend, not done yet.
+ * have been seen, and only `A` with a real DVI source. On DisplayPort the same colours mean the link
+ * rate: orange 1.62, light blue 2.7 and dark blue 5.4 Gbps/lane. Only 5.4 has been seen for real.
  */
 export function portLegend(status: PortStatus | undefined, detail: string | undefined): PortLegend {
 	if (!status?.connected) return 'none'

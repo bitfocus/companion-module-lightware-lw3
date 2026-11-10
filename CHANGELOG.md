@@ -42,10 +42,13 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - **feat(lock):** the lock action works on MX2 routers, can toggle, can act on the selected output, and has a preset. New **Locked output** feedback.
 - **feat(mute):** new **Mute or unmute a port** action, **Muted port** feedback, and a **MUTE** button that acts on the input or output pressed last. A muted port stays routed and sends black. Mutes made elsewhere are logged.
 - **feat(hotplug):** new **Hotplug an output** action and **HOTPLUG** button, which turn an output's 5V off and on to wake a display, and a **Hotplug an input** action, which makes a source read the EDID again. The ports page has a Hotplug button on every port, with a confirmation that lists the outputs an input hotplug drops. New **Hotplug in progress** feedback.
+- **feat(hotplug):** DisplayPort ports hotplug by retraining the link, as they have no 5V or HPD setting. Each port's own settings decide this, so a router could mix port types. Measured on the MX2-8x8-DH-8DPio-A. A router with mixed ports hasn't been tested.
+- **feat(clock):** new **Set the router's clock to Companion's time** action, and a **Router clock** section on the ports page showing how far out it is.
 - **feat(status):** new **Signal on a port**, **Cable connected to a port** and **Port status** feedbacks. Input and output presets show a coloured border with the legend from the router's web interface.
 - **feat(ports):** a page at `/instance/<connection label>/` to edit names, EDID and HDCP for all ports together, with a confirmation listing the changes, all-or-nothing checks, paste from a spreadsheet, Revert and Copy all. It also stores and deletes EDIDs in U slots. EDID changes go out as one command.
 - **feat(ports):** the page updates live from the router's WebSocket, keeps anything being edited, and shows whether it is Live. Names with accents or emoji are sent as the nearest plain characters, and EDID lists can be filtered.
 - **feat(ports):** the page is titled with the router's name, and can change it. New `router_name` variable.
+- **feat(names):** a **Default names** button on the ports page and a **Set names to default** action, for ports and the router name.
 - **feat(names):** new **Rename a port** action. Names changed elsewhere appear straight away and are logged.
 - **feat(presets):** presets use Companion 5 layered buttons with a plain fallback, a blank styled button, and every button lights up while held.
 - **feat(log):** logs what was found on connecting, reconnects, changes made elsewhere and anything the router refuses. Lines carry the connection's label as their source, and status messages name Lightware.
@@ -68,18 +71,21 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - Soft reset.
 - Whether the router announces a lock changed elsewhere.
 - How many router presets the router can hold, and the longest name it allows. 46 characters was accepted.
-- Any router other than the MX2-8x8-HDMI20-L, MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R and MX2-24x24-HDMI20-R, firmware other than 1.10.1b4 on the first two, 1.11.3b5 on the 16x16 and 1.12.0b8 on the 24x24, and any version of Companion other than 5.1.1 and 5.1.2. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
+- Any router other than the MX2-8x8-HDMI20-L, MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R and MX2-8x8-DH-8DPio-A, firmware other than 1.10.1b4 on the first two, 1.11.3b5 on the 16x16 and the DP router, and 1.12.0b8 on the 24x24, and any version of Companion other than 5.1.1 and 5.1.2. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
 - Standby and hotplug with real devices attached on the MX2-16x16-HDMI20-R and MX2-24x24-HDMI20-R.
 - How many routes one command can hold beyond 24, which matters for a 48x48.
+- A router with both HDMI and DisplayPort ports, and DisplayPort at 1.62 or 2.7 Gbps per lane, whose colours come from the router's own legend.
 - The audio settings of the MX2-8X8-HDMI20-AUDIO, which the module leaves alone.
 - Upgrading a v2 configuration.
 - How many subscriptions a router allows. The ports page subscribes per port, so 96 on a 48x48.
-- The connection limit on models other than the MX2-8x8-HDMI20-L, MX2-16x16-HDMI20-R and MX2-24x24-HDMI20-R.
+- The connection limit on models other than the MX2-8x8-HDMI20-L, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R and MX2-8x8-DH-8DPio-A.
 - The ports page's WebSocket against the fake router, which has none by design.
 - Whether the router announces a mute made from its front panel. Mutes made by command are announced.
 - Hotplugging an input from the module, rather than by command. The command was tested with a MacBook on Input 1.
 
 ### Tested on hardware
+
+The MX2-8x8-DH-8DPio-A on firmware 1.11.3b5, in Companion 5.1.2 with the built package: hotplug by link train on an output and an input, the ports page including on a phone, Default names, status borders at 5.4 Gbps per lane, routing, TAKE, holding an input for every output, locks, mutes, presets and front-panel preset buttons. A command line test of its spare ports matched the L's results for every LW3 command the module uses, except that DisplayPort ports have no 5V or HPD setting, took all 8 outputs in one command, and found the same limit of 15 connections.
 
 The MX2-24x24-HDMI20-R on firmware 1.12.0b8, in Companion 5.1.2 with the built package: connecting, input and output buttons with the status border, holding an input for every output, recalling a stored preset, all 24 front-panel preset buttons, and the ports page at 48 rows, including on a phone. A command line test of its spare ports matched the L's results for every LW3 command the module uses, took all 24 outputs in one command, and found the same limit of 15 connections.
 

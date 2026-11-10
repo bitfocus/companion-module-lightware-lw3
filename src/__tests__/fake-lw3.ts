@@ -60,6 +60,12 @@ export class FakeLw3 {
 	readonly inputHotplug: string[]
 	/** `Enable5V` on outputs, true or false */
 	readonly output5v: string[]
+	/** Ports with DisplayPort settings instead of HDMI ones, such as `O8`, as a router could mix them */
+	readonly displayPort = new Set<string>()
+	/** Ports listing neither kind of hotplug setting */
+	readonly noHotplug = new Set<string>()
+	/** As the router keeps it, with no time zone */
+	clock = '2026-11-10T08:45:28'
 	/** Everything received, without the ids */
 	readonly received: string[] = []
 	/** Stop answering, while staying connected */
@@ -259,6 +265,16 @@ export class FakeLw3 {
 		const open = /^OPEN (\S+)$/.exec(command)
 		if (open) return [`o- ${open[1]}`]
 
+		const linkTrain = /^CALL (\/MEDIA\/PORTS\/VIDEO\/([IO]\d+)\/SETTINGS:dpLinkTrain)\(\)$/.exec(command)
+		if (linkTrain) return this.displayPort.has(linkTrain[2]) ? [`mO ${linkTrain[1]}=`] : notExists(linkTrain[1], 'mE')
+		const setClock = /^CALL \/MANAGEMENT\/DATETIME:setTime\((.*)\)$/.exec(command)
+		if (setClock) {
+			if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(setClock[1])) {
+				return ['mE /MANAGEMENT/DATETIME:setTime %E004: Invalid value']
+			}
+			this.clock = setClock[1].slice(0, 19)
+			return ['mO /MANAGEMENT/DATETIME:setTime=']
+		}
 		const call = /^CALL (\S+?):(\w+)\((.*)\)$/.exec(command)
 		if (call) return this.#call(call[1], call[2], call[3], changes)
 
@@ -293,6 +309,7 @@ export class FakeLw3 {
 		const hotplug = /^SET (\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.(EnableHPD|Enable5V)=(.*)$/.exec(command)
 		if (hotplug) {
 			const [, path, kind, number, property, value] = hotplug
+			if (this.displayPort.has(`${kind}${number}`)) return notExists(`${path}.${property}`)
 			const list = kind === 'I' ? this.inputHotplug : this.output5v
 			const allowed = kind === 'I' ? ['AUTO', 'OFF'] : ['true', 'false']
 			if (!allowed.includes(value) || (kind === 'I') !== (property === 'EnableHPD')) {
@@ -307,6 +324,7 @@ export class FakeLw3 {
 		if (!get) return notExists(command)
 		const target = get[1]
 		if (target === '/.ProductName') return ['pr /.ProductName=MX2-8x8-HDMI20-L']
+		if (target === '/MANAGEMENT/DATETIME.CurrentTime') return [`pr ${target}=${this.clock}`]
 		if (target === '/MANAGEMENT/UID.FirmwareVersion') return [`pr /MANAGEMENT/UID.FirmwareVersion=${this.firmware}`]
 		if (target === '/MANAGEMENT/UID.DeviceLabel') return [`pw /MANAGEMENT/UID.DeviceLabel=${escaped(this.routerName)}`]
 		if (target === `${XP}.SourcePortGuiStatus`) return [`pr ${XP}.SourcePortGuiStatus=${this.sourceDetail}`]
@@ -326,12 +344,17 @@ export class FakeLw3 {
 			const value = (setting[1] === 'I' ? this.inputHdcp : this.outputHdcp)[Number(setting[2]) - 1]
 			return [`pw ${target}=${value}`]
 		}
-		const hotplugGet = /^\/MEDIA\/PORTS\/VIDEO\/(I(\d+)\/SETTINGS\.EnableHPD|O(\d+)\/SETTINGS\.Enable5V)$/.exec(target)
-		if (hotplugGet) {
-			const value = hotplugGet[2]
-				? this.inputHotplug[Number(hotplugGet[2]) - 1]
-				: this.output5v[Number(hotplugGet[3]) - 1]
-			return [`pw ${target}=${value}`]
+		const portSettings = /^(\/MEDIA\/PORTS\/VIDEO\/([IO])(\d+)\/SETTINGS)\.\*$/.exec(target)
+		if (portSettings) {
+			const [, path, kind, number] = portSettings
+			const reset = `m- ${path}:factoryDefaults`
+			if (this.noHotplug.has(`${kind}${number}`)) return [reset]
+			if (this.displayPort.has(`${kind}${number}`)) {
+				return [`pw ${path}.EnablePower=true`, reset, `m- ${path}:dpLinkTrain`]
+			}
+			return kind === 'I'
+				? [`pw ${path}.EnableHPD=${this.inputHotplug[Number(number) - 1]}`, reset]
+				: [`pw ${path}.Enable5V=${this.output5v[Number(number) - 1]}`, reset]
 		}
 		if (target.startsWith('/MEDIA/PORTS/VIDEO/') && target.includes('*')) return notExists(target)
 		if (target === `${NAMES}.*`) {

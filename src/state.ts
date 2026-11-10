@@ -31,7 +31,7 @@ export class RouterState {
 	/** Which kind of port was pressed last, which decides what the routed feedbacks show */
 	active: 'input' | 'output' | undefined
 	flashOn = true
-	/** Ports part way through a hotplug, with their 5V or HPD off */
+	/** Ports part way through a hotplug */
 	readonly hotplugging = new Set<PortId>()
 	/** SAVE was pressed: the next router preset pressed is overwritten instead of recalled */
 	saveArmed = false

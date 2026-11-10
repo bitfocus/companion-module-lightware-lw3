@@ -205,6 +205,49 @@ describe('the module against the fake router', () => {
 		expect(lock).toEqual(['portLocked', 'internal:buttonPushed'])
 	})
 
+	describe('default names', () => {
+		it('only sends names that are not already the default, and the model as the router name', async () => {
+			fake.outputs[1].name = 'Projector L'
+			fake.inputs[2].name = 'Laptop'
+			fake.routerName = 'Show rack'
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await module.setDefaultNames('all')
+			expect(writes()).toEqual([
+				'SET /MEDIA/NAMES/VIDEO.I3=2;Input 3',
+				'SET /MEDIA/NAMES/VIDEO.O2=2;Output 2',
+				'SET /MANAGEMENT/UID.DeviceLabel=MX2-8x8-HDMI20-L',
+			])
+			expect(logged(module, 'info')).toContain('Default names: 3 changed, 0 refused')
+		})
+
+		it('can do just the inputs, and does nothing when run again', async () => {
+			fake.inputs[0].name = 'Camera'
+			fake.outputs[0].name = 'Screen'
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			await module.setDefaultNames('inputs')
+			await module.setDefaultNames('inputs')
+			expect(writes()).toEqual(['SET /MEDIA/NAMES/VIDEO.I1=2;Input 1'])
+		})
+
+		it('gives the page the model, for its Default names button', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const reply = await module.handleHttpRequest({
+				method: 'GET',
+				path: '/ports',
+				baseUrl: '',
+				originalUrl: '/ports',
+				hostname: 'companion.local',
+				ip: '127.0.0.1',
+				query: {},
+				headers: { host: 'companion.local:8000' },
+			})
+			expect(JSON.parse(reply.body ?? '{}').model).toBe('MX2-8x8-HDMI20-L')
+		})
+	})
+
 	describe('input locks', () => {
 		it('locks the input pressed last, and shows it and the outputs it holds as locked', async () => {
 			await module.init({ host: '127.0.0.1', port })
@@ -414,6 +457,42 @@ describe('the module against the fake router', () => {
 			expect(await module.hotplug('O3', 0.5)).toBe('Output 3 is already off')
 			expect(writes()).toEqual([])
 			expect(fake.output5v[2]).toBe('false')
+		})
+
+		it('link trains a DisplayPort output, and shows it meanwhile, on a router that mixes port types', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			fake.displayPort.add('O8')
+			const done = module.hotplug('O8', 0.5)
+			await until(() => writes().length > 0)
+			expect(module.state.hotplugging.has('O8')).toBe(true)
+			expect(await done).toBeUndefined()
+			expect(module.state.hotplugging.has('O8')).toBe(false)
+			expect(writes()).toEqual(['CALL /MEDIA/PORTS/VIDEO/O8/SETTINGS:dpLinkTrain()'])
+			expect(fake.output5v[7]).toBe('true')
+			expect(logged(module, 'info')).toContain('Hotplug: Output 8 link train')
+			expect(await module.hotplug('O7', 0.5)).toBeUndefined()
+			expect(writes()).toContain('SET /MEDIA/PORTS/VIDEO/O7/SETTINGS.Enable5V=false')
+		})
+
+		it('says which outputs a DisplayPort input drops', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			fake.displayPort.add('I2')
+			expect(await module.hotplug('I2')).toBeUndefined()
+			expect(writes()).toEqual(['CALL /MEDIA/PORTS/VIDEO/I2/SETTINGS:dpLinkTrain()'])
+			expect(logged(module, 'info')).toContain(
+				'Hotplug: Input 2 link train, which drops Output 2, Output 3, Output 6, Output 8',
+			)
+		})
+
+		it('sends nothing to a port with no way to hotplug', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			fake.noHotplug.add('O3')
+			expect(await module.hotplug('O3', 0.5)).toBe("Output 3 can't be hotplugged")
+			expect(writes()).toEqual([])
+			expect(module.state.hotplugging.has('O3')).toBe(false)
 		})
 
 		it('turns a port back on after reconnecting, if the router stopped answering part way', async () => {
@@ -1293,6 +1372,15 @@ describe('the module against the fake router', () => {
 			const script = /<script>([\s\S]*)<\/script>/.exec(body)?.[1] ?? ''
 			expect(script.length).toBeGreaterThan(1000)
 			expect(() => new Script(script)).not.toThrow()
+		})
+
+		it("shows the router's clock and sets it to Companion's time", async () => {
+			await ready()
+			const before = (await module.handleHttpRequest(request('GET', '/clock'))).body ?? ''
+			expect(JSON.parse(before)).toMatchObject({ router: '2026-11-10T08:45:28' })
+			expect(await send('POST', '/clock', {})).toEqual({ status: 200, json: {} })
+			expect(fake.clock).not.toBe('2026-11-10T08:45:28')
+			expect(logged(module, 'info').join()).toContain('Router clock set to')
 		})
 
 		it('works out a plain name in the page just as the module does', async () => {

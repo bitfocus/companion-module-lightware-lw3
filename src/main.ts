@@ -8,7 +8,14 @@ import {
 	type LogLevel,
 	type SomeCompanionConfigField,
 } from '@companion-module/base'
-import { UpdateActions, type ActionsSchema, type LockCommand, type MuteCommand, type PowerCommand } from './actions.js'
+import {
+	UpdateActions,
+	type ActionsSchema,
+	type DefaultNamesScope,
+	type LockCommand,
+	type MuteCommand,
+	type PowerCommand,
+} from './actions.js'
 import { portOf } from './choices.js'
 import { Lw3Client } from './client.js'
 import {
@@ -32,6 +39,8 @@ import {
 	DEFAULT_PORT,
 	HOTPLUG_DEFAULT_SECONDS,
 	HOTPLUG_MAX_SECONDS,
+	LINK_TRAIN_MS,
+	localClock,
 	EDID_BANKS,
 	ErrorCode,
 	MAX_NAME_LENGTH,
@@ -201,6 +210,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				this.#edidCommand(Cmd.copyEdid(from, to), `Stored ${from} in ${to}`),
 			deleteEdid: async (slot: string) => this.#edidCommand(Cmd.deleteEdid(slot), `Deleted the EDID in ${slot}`),
 			hotplug: async (port: string) => this.hotplug(port as PortId),
+			readClock: async () => this.#readClock(),
+			setClock: async () => this.setRouterClock(),
 			outputsFedBy: (input: number) => this.outputsFedBy(input),
 			presets: () =>
 				[...this.state.presets].map(([name, routes]) => ({
@@ -250,7 +261,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			outputs.push({ port, name: state.outputName(port), hdcp })
 		}
 		const edids = await this.#readEdidSlots()
-		return edids && { routerName: state.routerName, standby: state.standby, inputs, outputs, edids }
+		return edids && { routerName: state.routerName, model: state.model, standby: state.standby, inputs, outputs, edids }
 	}
 
 	async #readEdidSlots(): Promise<EdidSlot[] | undefined> {
@@ -869,7 +880,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/**
 	 * Turns an output's 5V, or an input's hotplug, off and back on, as if its cable was pulled and put
-	 * back. An input's affects every output it feeds. Returns why it didn't happen, if it didn't.
+	 * back, or retrains the link on a DisplayPort port. An input's affects every output it feeds. Each
+	 * port's own settings say which, as a router could mix them. Returns why it didn't happen, if it didn't.
 	 */
 	async hotplug(port: PortId | undefined, seconds = HOTPLUG_DEFAULT_SECONDS): Promise<string | undefined> {
 		this.disarmSave()
@@ -882,21 +894,25 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const name = this.state.portName(port)
 		if (this.state.hotplugging.has(port)) return `${name} is already being hotplugged`
 		const hold = Math.min(Math.max(Number(seconds) || HOTPLUG_DEFAULT_SECONDS, 0.5), HOTPLUG_MAX_SECONDS)
-		const read = await this.#client.request(isInput ? Cmd.inputHotplug(number) : Cmd.output5v(number), true)
+		const read = await this.#client.request(Cmd.portSettings(port), true)
 		if (read === undefined) {
 			this.log('warn', `Not connected, so ${name} wasn't hotplugged`)
 			return 'Not connected'
 		}
-		const value = parseProperty(read.find((line) => line.startsWith('pw ')) ?? '')?.value
+		const setting = isInput ? 'EnableHPD' : 'Enable5V'
+		const value = read.map(parseProperty).find((found) => found?.property === setting)?.value
+		const fed = isInput ? this.outputsFedBy(number) : []
+		const feeds = fed.length > 0 ? `, which drops ${fed.join(', ')}` : ''
+		if (value === undefined && read.some((line) => /^m\S*\s+\S*:dpLinkTrain\b/.test(line))) {
+			return this.#linkTrain(port, name, feeds)
+		}
 		const normal = isInput ? 'AUTO' : 'true'
 		if (value !== normal) {
 			// someone turned it off on purpose, and a hotplug would leave it on
-			const why = value === undefined ? `the router didn't say how ${name} is set` : `${name} is already off`
+			const why = value === undefined ? `${name} can't be hotplugged` : `${name} is already off`
 			this.log('warn', `Hotplug not sent: ${why}`)
 			return why
 		}
-		const fed = isInput ? this.outputsFedBy(number) : []
-		const feeds = fed.length > 0 ? `, which drops ${fed.join(', ')}` : ''
 		this.log('info', `Hotplug: ${name} off for ${hold} s${feeds}`)
 		this.state.hotplugging.add(port)
 		this.checkFeedbacks('hotplugging')
@@ -914,6 +930,23 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		await new Promise((resolve) => setTimeout(resolve, hold * 1000))
 		await this.#finishHotplug(port)
 		return undefined
+	}
+
+	/** DisplayPort has nothing to turn off and back on. The router drops the link and brings it back by itself. */
+	async #linkTrain(port: PortId, name: string, feeds: string): Promise<string | undefined> {
+		this.log('info', `Hotplug: ${name} link train${feeds}`)
+		this.state.hotplugging.add(port)
+		this.checkFeedbacks('hotplugging')
+		const reply = await this.#client.request(Cmd.linkTrain(port), true)
+		const error = reply === undefined ? 'Not connected' : replyError(reply)?.message
+		if (error) {
+			this.log('warn', `The router refused to hotplug ${name}: ${error}`)
+		} else {
+			await new Promise((resolve) => setTimeout(resolve, LINK_TRAIN_MS))
+		}
+		this.state.hotplugging.delete(port)
+		this.checkFeedbacks('hotplugging')
+		return error || undefined
 	}
 
 	/** If the router can't be told, it is told on reconnecting, so a port is never left off */
@@ -981,6 +1014,25 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	/** Standby turns the outputs off and refuses every change until the router wakes */
+	/** Returns why it didn't happen, if it didn't */
+	async setRouterClock(): Promise<string | undefined> {
+		const time = localClock(new Date())
+		const reply = await this.#client.request(Cmd.setClock(time), true)
+		const error = reply === undefined ? 'Not connected' : replyError(reply)?.message
+		if (error) {
+			this.log('warn', `The router's clock wasn't set: ${error}`)
+			return error
+		}
+		this.log('info', `Router clock set to ${time.slice(0, 19).replace('T', ' ')}`)
+		return undefined
+	}
+
+	async #readClock(): Promise<{ router?: string; companion: string }> {
+		const reply = await this.#client.request(Cmd.clock)
+		const router = reply?.map(parseProperty).find((found) => found?.property === 'CurrentTime')?.value
+		return { router, companion: localClock(new Date()).slice(0, 19) }
+	}
+
 	async setPower(command: PowerCommand): Promise<void> {
 		const standby = command === 'toggle' ? !this.state.standby : command === 'standby'
 		const lines = await this.#client.request(standby ? Cmd.standby : Cmd.wakeUp, true)
@@ -1014,6 +1066,35 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.log('info', 'The router is awake. Its signals take about 20 s to come back.')
 			this.updateStatus(InstanceStatus.Ok)
 		}
+	}
+
+	/** Only sends what isn't already the default, so running it again does nothing */
+	async setDefaultNames(scope: DefaultNamesScope): Promise<void> {
+		const { state } = this
+		if (!this.#socket?.isConnected || state.inputCount === 0) {
+			this.log('warn', "Not connected, so the names weren't changed")
+			return
+		}
+		const ports: [PortId, string][] = []
+		if (scope === 'all' || scope === 'inputs') {
+			for (let input = 1; input <= state.inputCount; input++) ports.push([`I${input}`, `Input ${input}`])
+		}
+		if (scope === 'all' || scope === 'outputs') {
+			for (let output = 1; output <= state.outputCount; output++) ports.push([`O${output}`, `Output ${output}`])
+		}
+		let changed = 0
+		let refused = 0
+		for (const [port, name] of ports) {
+			if (state.names.get(port)?.name === name) continue
+			if (await this.#rename(port, name)) refused++
+			else changed++
+		}
+		if ((scope === 'all' || scope === 'router') && state.model && state.routerName !== state.model) {
+			const lines = await this.#client.request(Cmd.setRouterName(state.model), true)
+			if (lines === undefined || replyError(lines)) refused++
+			else changed++
+		}
+		this.log(refused ? 'warn' : 'info', `Default names: ${changed} changed, ${refused} refused`)
 	}
 
 	async softReset(): Promise<void> {

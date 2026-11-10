@@ -293,9 +293,9 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					choices: [
 						{ id: 'none', label: 'Not connected' },
 						{ id: 'connected', label: 'Connected, no signal' },
-						{ id: 'dvi', label: 'DVI signal' },
-						{ id: 'hdmi', label: 'HDMI signal (max 9G)' },
-						{ id: 'hdmi18', label: 'HDMI signal (max 18G)' },
+						{ id: 'dvi', label: 'DVI signal, or DP at 1.62 Gbps/lane' },
+						{ id: 'hdmi', label: 'HDMI up to 9G, or DP at 2.7 Gbps/lane' },
+						{ id: 'hdmi18', label: 'HDMI up to 18G, or DP at 5.4 Gbps/lane' },
 					],
 				},
 			],
@@ -446,7 +446,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		hotplugging: {
 			type: 'boolean',
 			name: 'Hotplug in progress',
-			description: "True while this port's 5V or HPD is off for a hotplug",
+			description: 'True while this port is being hotplugged',
 			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
 			options: [
 				{

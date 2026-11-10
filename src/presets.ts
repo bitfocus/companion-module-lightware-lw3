@@ -303,7 +303,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		feedbacks: [{ feedbackId: 'portMuted', options: { port: 'selected' }, background: MUTED }, controlPushed],
 	})
 	presets.hotplug = textButton({
-		name: 'Hotplug the selected output: 5V off, then on, to wake its display',
+		name: 'Hotplug the selected output, to wake its display',
 		background: CONTROL,
 		text: `${VAR}selected_output_hotplug_text)`,
 		fontsize: CHANGING_TEXT_FONT_SIZE,

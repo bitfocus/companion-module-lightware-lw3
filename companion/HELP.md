@@ -4,6 +4,7 @@ Version 3.0.0 is a rewrite, built from measurements of real routers. It has been
 - MX2-8X8-HDMI20-AUDIO, firmware 1.10.1b4
 - MX2-16x16-HDMI20-R, firmware 1.11.3b5
 - MX2-24x24-HDMI20-R, firmware 1.12.0b8
+- MX2-8x8-DH-8DPio-A, firmware 1.11.3b5
 
 Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log says so.
 
@@ -94,9 +95,11 @@ A hotplug makes a port look unplugged for a moment, from the module or the ports
 - **Output:** turns its 5V off, then on, which can wake a display that has lost its picture. Only that output is affected. The **HOTPLUG** button acts on the selected output and turns orange while it's off.
 - **Input:** turns its hotplug signal off, then on, so the source reads the EDID again, such as after a change to an EDID from the same maker that it didn't notice. Every output the input feeds drops its picture too, so this is an action with no button, and the ports page lists those outputs before it goes ahead. If the source fakes its own EDID, it does nothing useful.
 
-Each is off for 2 seconds unless the action says otherwise. On the MX2-8x8-HDMI20-L the router saw a display come back about half a second after its 5V came back on, and an input's source had its signal back about 3 seconds after its hotplug came back on. A port that is already off, set that way on purpose, is left alone. If the connection drops part way, the port is turned back on when the router is back.
+On HDMI, each is off for 2 seconds unless the action says otherwise. On the MX2-8x8-HDMI20-L the router saw a display come back about half a second after its 5V came back on, and an input's source had its signal back about 3 seconds after its hotplug came back on. A port that is already off, set that way on purpose, is left alone. If the connection drops part way, the port is turned back on when the router is back.
 
 The router can see a display being detected, but not a picture, so whether a hotplug worked is for your eyes to judge.
+
+**DisplayPort ports** have no 5V or hotplug setting to turn off, so a hotplug asks the router to retrain the link instead, and the seconds setting is ignored. On the MX2-8x8-DH-8DPio-A, an output's picture went black for about a second. An input's picture was gone for about 3 seconds on every output it feeds, and the MacBook on it came back mirrored instead of extended, so a computer may rearrange its screens. Which way a hotplug works is decided port by port.
 
 ### Port status
 
@@ -104,11 +107,11 @@ Input and output buttons have a coloured border, in the colours of the router's 
 
 - **No border:** not connected
 - **Yellow:** connected, no signal
-- **Orange:** DVI signal
-- **Light blue:** HDMI signal, up to 9G
-- **Dark blue:** HDMI signal, up to 18G
+- **Orange:** DVI signal, or DisplayPort at 1.62 Gbps per lane
+- **Light blue:** HDMI signal up to 9G, or DisplayPort at 2.7 Gbps per lane
+- **Dark blue:** HDMI signal up to 18G, or DisplayPort at 5.4 Gbps per lane
 
-An output with no display shows no border even with a source routed to it, as the router's interface does. The plain fallback buttons have no border. DisplayPort has its own legend in the router's interface, which the module doesn't show yet. The **Port status** feedback gives you the same states for your own buttons.
+An output with no display shows no border even with a source routed to it, as the router's interface does. The plain fallback buttons have no border. The DisplayPort colours follow the router's own legend, and only 5.4 Gbps has been seen on a real link. The **Port status** feedback gives you the same states for your own buttons.
 
 **Signal on a port** and **Cable connected to a port** come from the router's own port status. On an output, signal means a live input is routed to it, not that a display is there: use **Cable connected** for that.
 
@@ -130,11 +133,17 @@ You can paste from a spreadsheet into a Name cell: lines fill downward, and tabs
 
 EDID and HDCP changes can make sources and displays renegotiate, which can drop their picture. The page warns you, and says which of the changed inputs have a live signal.
 
+The **Default names** button fills in `Input 1`, `Output 1` and so on, and the model as the router name. Nothing is sent until you press Apply, and Revert last Apply brings the old names back. The **Set names to default** action does the same straight away, for all of them or just the inputs, outputs or router name. It has no preset, as it can't be undone from a button.
+
 ### Standby
 
 The router's standby turns every output off, and it refuses any change until it wakes. The **Put the router in standby, or wake it** action does either, or toggles. There is deliberately no preset for it.
 
 While the router is in standby, wherever that was done from, the connection shows a warning, the log says so, the `power` variable is `STANDBY`, the **Router in standby** feedback is on, and the ports page says so at the top. On the MX2-8x8-HDMI20-L, signals took about 20 seconds to come back after waking.
+
+### Router clock
+
+The **Set the router's clock to Companion's time** action, and the **Router clock** section of the ports page, use the time on the computer running Companion. There is no preset for it, and the module never sets the clock by itself. The router has no time zone, so this needs doing again when the clocks change.
 
 ### Soft reset
 

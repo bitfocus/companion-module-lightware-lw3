@@ -21,6 +21,7 @@ type NoOptions = Record<string, never>
 export type LockCommand = 'lockDestination' | 'unlockDestination' | 'toggle'
 export type MuteCommand = 'mute' | 'unmute' | 'toggle'
 export type PowerCommand = 'standby' | 'wake' | 'toggle'
+export type DefaultNamesScope = 'all' | 'inputs' | 'outputs' | 'router'
 
 export type ActionsSchema = {
 	xpt: { options: { input: string; output: string } }
@@ -47,7 +48,9 @@ export type ActionsSchema = {
 	hotplugInput: { options: { input: string; seconds: number } }
 	rename: { options: { port: string; name: string } }
 	softreset: { options: NoOptions }
+	setDefaultNames: { options: { scope: string } }
 	power: { options: { cmd: string } }
+	setClock: { options: Record<string, never> }
 }
 
 export function UpdateActions(self: ModuleInstance): void {
@@ -58,7 +61,7 @@ export function UpdateActions(self: ModuleInstance): void {
 	const hotplugSeconds = {
 		type: 'number' as const,
 		id: 'seconds' as const,
-		label: 'Off for (seconds)',
+		label: 'Off for (seconds, HDMI only)',
 		default: HOTPLUG_DEFAULT_SECONDS,
 		min: 0.5,
 		max: HOTPLUG_MAX_SECONDS,
@@ -399,7 +402,7 @@ export function UpdateActions(self: ModuleInstance): void {
 			callback: async (action) => self.mutePort(String(action.options.port), String(action.options.cmd) as MuteCommand),
 		},
 		hotplugOutput: {
-			name: 'Hotplug an output (5V off, then on)',
+			name: 'Hotplug an output (5V off and on, or DP link train)',
 			description:
 				'Looks to the display as if its cable was pulled and put back, which can wake one that has lost its picture. Only this output is affected.',
 			options: [
@@ -428,7 +431,7 @@ export function UpdateActions(self: ModuleInstance): void {
 			},
 		},
 		hotplugInput: {
-			name: 'Hotplug an input (HPD off, then on)',
+			name: 'Hotplug an input (HPD off and on, or DP link train)',
 			description:
 				'Makes the source read the EDID again, such as after an EDID change it missed. Every output this input feeds drops its picture too. It does nothing useful if the source fakes its own EDID. There is no preset for this on purpose.',
 			options: [
@@ -482,6 +485,35 @@ export function UpdateActions(self: ModuleInstance): void {
 				},
 			],
 			callback: async (action) => self.setPower(String(action.options.cmd) as PowerCommand),
+		},
+		setClock: {
+			name: "Set the router's clock to Companion's time",
+			description:
+				'Uses the time on the computer running Companion. The router has no time zone, so this needs doing again when the clocks change.',
+			options: [],
+			callback: async () => {
+				await self.setRouterClock()
+			},
+		},
+		setDefaultNames: {
+			name: 'Set names to default',
+			description:
+				"Input 1, Output 1 and so on, and the model as the router name. It replaces the names straight away and can't be undone from here. There is no preset for this on purpose: the ports page has a Default names button that asks first and can be reverted.",
+			options: [
+				{
+					type: 'dropdown',
+					id: 'scope',
+					label: 'Names',
+					default: 'all',
+					choices: [
+						{ id: 'all', label: 'All ports and the router name' },
+						{ id: 'inputs', label: 'Inputs' },
+						{ id: 'outputs', label: 'Outputs' },
+						{ id: 'router', label: 'Router name' },
+					],
+				},
+			],
+			callback: async (action) => self.setDefaultNames(String(action.options.scope) as DefaultNamesScope),
 		},
 		softreset: {
 			name: 'Soft reset the router',
