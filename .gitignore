@@ -1,3 +1,16 @@
 **/node_modules
+package-lock.json
 /pkg
 /pkg.tgz
+/*.tgz
+/dist
+DEBUG-*
+.DS_Store
+/.yarn
+/.vscode
+
+# Local reference material, router captures and Companion page exports (can hold addresses)
+/docs/*.pdf
+/captures/
+*.companionconfig
+/.claude/
