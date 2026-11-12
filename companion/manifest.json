@@ -1,38 +1,29 @@
 {
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
 	"id": "lightware-lw3",
 	"name": "lightware-lw3",
 	"shortname": "lightwareLW3",
-	"description": "Control Lightware LW3 Equipment",
-	"version": "2.0.4",
+	"description": "Control Lightware LW3 matrix routers",
+	"version": "3.0.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-lightware-lw3.git",
 	"bugs": "https://github.com/bitfocus/companion-module-lightware-lw3/issues",
 	"maintainers": [
-		{
-			"name": "Håkon Nessjøen",
-			"email": "haakon@bitfocus.io"
-		},
-		{
-			"name": "Dorian Meid",
-			"email": "meid@backstage.org"
-		},
-		{
-			"name": "Jeffrey Davidsz",
-			"email": "jeffrey.davidsz@vicreo.eu"
-		},
-		{
-			"name": "Joseph Adams",
-			"email": "josephdadams@gmail.com"
-		}
+		{ "name": "Håkon Nessjøen", "email": "haakon@bitfocus.io" },
+		{ "name": "Dorian Meid", "email": "meid@backstage.org" },
+		{ "name": "Jeffrey Davidsz", "email": "jeffrey.davidsz@vicreo.eu" },
+		{ "name": "Joseph Adams", "email": "josephdadams@gmail.com" },
+		{ "name": "Dan Hall", "email": "dan@qed-productions.com" }
 	],
 	"legacyIds": ["lightware3"],
 	"runtime": {
-		"type": "node18",
+		"type": "node26",
 		"api": "nodejs-ipc",
 		"apiVersion": "0.0.0",
-		"entrypoint": "../index.js"
+		"entrypoint": "../dist/main.js"
 	},
 	"manufacturer": "Lightware",
 	"products": ["LW3"],
-	"keywords": ["Protocol", "Matrix"]
+	"keywords": ["Protocol", "Matrix", "Router"]
 }
