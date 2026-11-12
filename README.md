@@ -23,7 +23,9 @@ To try the module without a router, run `yarn fake-router` and point a connectio
 
 LW3 varies between models, so the module is built on what real routers do. Lightware's manual text can be wrong: this router's own text gives `switch(I1,O1)`, and it rejects that.
 
-`node tools/lw3-capture.mjs ROUTER_IP` walks a router's whole LW3 tree and saves it in `captures/`. It only sends `GET` and `MAN`, so it can't change anything.
+`node tools/lw3-capture.mjs ROUTER_IP` walks a router's whole LW3 tree and saves it in `captures/`. It only sends `GET` and `MAN`, so it can't change anything. It needs Node and nothing else, so the one file can be downloaded on its own. Addresses, serial numbers and host names are blanked, and port and preset names and stored EDIDs are kept.
+
+To get a router supported, attach its capture to an [issue](https://github.com/bitfocus/companion-module-lightware-lw3/issues) with the model and firmware.
 
 `node tools/lw3-try.mjs ROUTER_IP` tests routing, locks and names on two outputs with no display. **This one changes the router.** It reports where it left things.
 

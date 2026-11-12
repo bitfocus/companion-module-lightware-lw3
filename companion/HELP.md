@@ -6,7 +6,9 @@ Version 3.0.0 is a rewrite, built from measurements of real routers. It has been
 - MX2-24x24-HDMI20-R, firmware 1.12.0b8
 - MX2-8x8-DH-8DPio-A, firmware 1.11.3b5
 
-Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log says so.
+Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log and the connection status say so.
+
+**Router not supported?** Open an issue on [GitHub](https://github.com/bitfocus/companion-module-lightware-lw3/issues) with the model, its firmware and that log line. The module is built from what real routers do, so a capture of yours helps most. The README on GitHub explains how to make one: it needs Node, and only reads from the router. Check the file before attaching it, as it keeps your port and preset names and stored EDIDs.
 
 ## SETUP
 

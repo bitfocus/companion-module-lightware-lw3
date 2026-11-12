@@ -1339,7 +1339,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const { model, firmware: version, inputCount, outputCount, presets } = this.state
 		const unit = `${model || 'Unknown model'}, firmware ${version || 'unknown'}`
 		if (!supported) {
-			this.log('warn', `Connected to ${unit}, but it doesn't have the routing this module knows. Please report it.`)
+			this.log(
+				'warn',
+				`Connected to ${unit}, but it doesn't have the routing this module knows. The help says how to report it.`,
+			)
 			this.updateStatus(InstanceStatus.UnknownWarning, 'Lightware router model not supported yet')
 		} else {
 			this.log(
