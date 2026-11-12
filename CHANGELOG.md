@@ -15,6 +15,7 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 
 - Requires Companion 5 (module API `@companion-module/base` 2.x) and Node 26. Stay on 2.x for Companion 3 or 4.
 - Routers without the MX2 style `/MEDIA/XP/VIDEO` routing, such as those using `/MEDIA/VIDEO/XP`, are no longer supported until they have been measured. The log says so when connecting to one.
+- The MMX8x8-HDMI-4K-A-USB20 and HDMI20-OPTC, listed as tested in v2's help, have not been tested with v3. Stay on 2.x for those until they have been.
 - Router presets are only read from `/MEDIA/PRESET`, no longer from `/PRESETS/AVC`.
 - The **Switch USB Host** and **Run Macro** actions are removed. They used paths this router doesn't have, and couldn't be tested.
 - Presets are rebuilt under new ids with a new look. Buttons already placed from v2 presets are unaffected, because Companion copies a preset when it is placed, but they keep the v2 look.
