@@ -9,7 +9,7 @@ All notable changes to this module are documented here. The format follows
 
 ## [3.0.0] - Unreleased
 
-A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8-HDMI20-L on firmware 1.10.1b4. That is the only router it has been tested with. The ids of the actions, feedbacks and variables it keeps from v2 are unchanged and there is no upgrade script, but upgrading a v2 configuration has not been tested. Check your buttons after upgrading.
+A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8-HDMI20-L on firmware 1.10.1b4. It has since been tested on the MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R and MX2-8x8-DH-8DPio-A too. The ids of the actions, feedbacks and variables it keeps from v2 are unchanged and there is no upgrade script, but upgrading a v2 configuration has not been tested. Check your buttons after upgrading.
 
 ### ⚠ BREAKING CHANGES
 

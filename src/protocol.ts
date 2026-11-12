@@ -35,8 +35,10 @@ export function localClock(now: Date): string {
 	return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString()
 }
 
-/** Paths are built from preset names, so a name that could change the command never reaches the router */
-/** The router took 46 characters, and spaces and dots too, but those would end up inside commands */
+/**
+ * Paths are built from preset names, so a name that could change the command never reaches the router.
+ * The router took 46 characters, and spaces and dots too, but those would end up inside commands.
+ */
 const SAFE_PRESET_NAME = /^[A-Za-z0-9_-]{1,46}$/
 
 export const isSafePresetName = (name: string): boolean => SAFE_PRESET_NAME.test(name)
@@ -62,8 +64,10 @@ export const Cmd = {
 	/** Not in the manual. These are what the router's own web interface colours its ports from. */
 	destinationDetail: `GET ${XP}.DestinationPortGuiStatus`,
 	sourceDetail: `GET ${XP}.SourcePortGuiStatus`,
-	/** The `*` includes the nodes below, which is where each preset is. What it announces hasn't been measured. */
-	/** Changes to the presets that exist. Measured: a preset being added or deleted isn't announced here. */
+	/**
+	 * Changes to the presets that exist: the `*` includes the nodes below, which is where each preset is.
+	 * Measured: a preset being added or deleted isn't announced here.
+	 */
 	subscribePresets: `OPEN ${PRESETS}/*`,
 	/** Presets being added, renamed or deleted, announced as NEW and DEL lines */
 	subscribePresetList: `OPEN ${PRESETS}`,

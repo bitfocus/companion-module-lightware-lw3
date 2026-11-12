@@ -146,7 +146,9 @@ export function checkChanges(changes: PortChanges, snapshot: PortsSnapshot): str
 function readChanges(body: Record<string, unknown>): PortChanges | undefined {
 	const { routerName, names, inputHdcp, outputHdcp, edids } = body
 	const lists = [names, inputHdcp, outputHdcp, edids]
-	if (!lists.every(Array.isArray)) return undefined
+	const isList = (list: unknown): boolean =>
+		Array.isArray(list) && list.every((entry) => entry !== null && typeof entry === 'object')
+	if (!lists.every(isList)) return undefined
 	const texts = (names as { port?: unknown; name?: unknown }[]).map(({ port, name }) => ({
 		port: String(port),
 		name: typeof name === 'string' ? name.trim() : '',

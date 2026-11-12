@@ -495,6 +495,18 @@ describe('the module against the fake router', () => {
 			expect(module.state.hotplugging.has('O3')).toBe(false)
 		})
 
+		it('refuses a second hotplug of the same port pressed while the first reads its settings', async () => {
+			await module.init({ host: '127.0.0.1', port })
+			await connected()
+			const first = module.hotplug('O8', 0.5)
+			expect(await module.hotplug('O8', 0.5)).toBe('Output 8 is already being hotplugged')
+			expect(await first).toBeUndefined()
+			expect(writes()).toEqual([
+				'SET /MEDIA/PORTS/VIDEO/O8/SETTINGS.Enable5V=false',
+				'SET /MEDIA/PORTS/VIDEO/O8/SETTINGS.Enable5V=true',
+			])
+		})
+
 		it('turns a port back on after reconnecting, if the router stopped answering part way', async () => {
 			await module.init({ host: '127.0.0.1', port })
 			await connected()
@@ -599,6 +611,8 @@ describe('the module against the fake router', () => {
 		expect(writes()).toEqual([])
 		module.selectInput(3)
 		await until(() => variable(module, 'source_O7') === 'I3')
+		// the change message arrives a moment before the reply, and the take clears the selection on the reply
+		await until(() => module.state.selectedOutput === undefined)
 		module.selectInput(4)
 		expect(writes()).toHaveLength(1)
 		module.selectOutput(8)
@@ -650,6 +664,20 @@ describe('the module against the fake router', () => {
 		}
 		expect(writes()).toEqual([])
 		expect(logged(module, 'info')).toContain('Auto-route mode: STAGE')
+	})
+
+	it('forgets the old router when the IP changes', async () => {
+		await module.init({ host: '127.0.0.1', port })
+		await connected()
+		module.selectOutput(2)
+		expect(module.outputsFedBy(2)).toEqual(['Output 2', 'Output 3', 'Output 6', 'Output 8'])
+		// an address with nothing listening, standing in for a different router
+		await module.configUpdated({ host: '127.0.0.2', port })
+		expect(module.outputsFedBy(2)).toEqual([])
+		expect(module.state.outputCount).toBe(0)
+		expect(module.state.selectedOutput).toBeUndefined()
+		expect(variable(module, 'model')).toBe('')
+		expect(variable(module, 'source_O2')).not.toBe('I2')
 	})
 
 	it('does not reconnect when only the auto-route mode changes', async () => {
@@ -1346,6 +1374,14 @@ describe('the module against the fake router', () => {
 			await module.init({ host: '127.0.0.1', port })
 			await connected()
 		}
+
+		it('refuses a list of changes with an entry that is not an object', async () => {
+			await ready()
+			const reply = await send('POST', '/ports', { ...none, names: [null] })
+			expect(reply.status).toBe(400)
+			expect(reply.json.error).toBe('The request is not a list of changes')
+			expect(writes()).toEqual([])
+		})
 
 		it('hotplugs from the page, and tells it which outputs an input feeds', async () => {
 			await ready()

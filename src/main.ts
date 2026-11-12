@@ -132,6 +132,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#heartbeatTimer: ReturnType<typeof setInterval> | undefined
 	/** Hotplugs whose port couldn't be turned back on, to finish when the router is back */
 	readonly #unfinishedHotplugs = new Set<PortId>()
+	/** Ports whose hotplug is reading their settings, so a second press can't start another */
+	readonly #hotplugStarting = new Set<PortId>()
+	/** Goes up when the router IP changes, so a hotplug under way can't finish on the new router */
+	#routerGeneration = 0
 	#connectTimer: ReturnType<typeof setTimeout> | undefined
 	#presetReadTimer: ReturnType<typeof setTimeout> | undefined
 	#flashTimer: ReturnType<typeof setInterval> | undefined
@@ -173,7 +177,34 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.config = config
 		this.#autoRouteModeChanged(previousMode)
 		if (config.host === previous.host && config.port === previous.port) return
+		this.#forgetRouter()
 		this.#connect()
+	}
+
+	/** A new IP may be a different router, so nothing learned from the old one may linger or be sent to it */
+	#forgetRouter(): void {
+		this.#routerGeneration++
+		this.disarmSave()
+		this.#unfinishedHotplugs.clear()
+		this.#hotplugStarting.clear()
+		this.state.forgetRouter()
+		this.#sentValues.clear()
+		this.#publishDefinitions(true)
+		this.#publish({
+			model: '',
+			firmware: '',
+			router_name: '',
+			inputs: 0,
+			outputs: 0,
+			power: 'NORMAL',
+			live_preset: 'None',
+			...portNameValues(this.state),
+			...routeValues(this.state),
+			...selectionValues(this.state),
+			...slotValues(this.state),
+		})
+		this.#stopFlash()
+		this.#syncFlash()
 	}
 
 	getConfigFields(): SomeCompanionConfigField[] {
@@ -686,7 +717,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.checkFeedbacks('saveArmed', 'saveSlotArmed')
 	}
 
-	/** Stores what is routed now. Staged routes aren't routed yet, so they aren't saved. */
+	/** Stores what is routed now or, with routes staged, what a take would leave routed */
 	async savePreset(name: string): Promise<string | undefined> {
 		if (!isSafePresetName(name) || !this.state.presets.has(name)) {
 			this.log('warn', `There is no router preset called "${name}" to overwrite`)
@@ -892,9 +923,18 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		const number = Number(port.slice(1))
 		const isInput = port.startsWith('I')
 		const name = this.state.portName(port)
-		if (this.state.hotplugging.has(port)) return `${name} is already being hotplugged`
+		if (this.state.hotplugging.has(port) || this.#hotplugStarting.has(port))
+			return `${name} is already being hotplugged`
 		const hold = Math.min(Math.max(Number(seconds) || HOTPLUG_DEFAULT_SECONDS, 0.5), HOTPLUG_MAX_SECONDS)
-		const read = await this.#client.request(Cmd.portSettings(port), true)
+		const generation = this.#routerGeneration
+		// claimed before the read, as a second press during it would otherwise start a second hotplug
+		this.#hotplugStarting.add(port)
+		let read: string[] | undefined
+		try {
+			read = await this.#client.request(Cmd.portSettings(port), true)
+		} finally {
+			this.#hotplugStarting.delete(port)
+		}
 		if (read === undefined) {
 			this.log('warn', `Not connected, so ${name} wasn't hotplugged`)
 			return 'Not connected'
@@ -928,6 +968,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return offError
 		}
 		await new Promise((resolve) => setTimeout(resolve, hold * 1000))
+		if (generation !== this.#routerGeneration) {
+			this.log('warn', `The router IP changed during the hotplug, so ${name} on the previous router may still be off`)
+			return undefined
+		}
 		await this.#finishHotplug(port)
 		return undefined
 	}
@@ -1013,7 +1057,6 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return undefined
 	}
 
-	/** Standby turns the outputs off and refuses every change until the router wakes */
 	/** Returns why it didn't happen, if it didn't */
 	async setRouterClock(): Promise<string | undefined> {
 		const time = localClock(new Date())
@@ -1033,6 +1076,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return { router, companion: localClock(new Date()).slice(0, 19) }
 	}
 
+	/** Standby turns the outputs off and refuses every change until the router wakes */
 	async setPower(command: PowerCommand): Promise<void> {
 		const standby = command === 'toggle' ? !this.state.standby : command === 'standby'
 		const lines = await this.#client.request(standby ? Cmd.standby : Cmd.wakeUp, true)

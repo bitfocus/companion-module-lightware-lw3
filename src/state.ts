@@ -40,6 +40,28 @@ export class RouterState {
 	/** In standby the outputs are off and every change is refused */
 	standby = false
 
+	/** Everything learned from a router, and anything staged or selected for it, for when the IP changes */
+	forgetRouter(): void {
+		this.inputCount = 0
+		this.outputCount = 0
+		this.model = ''
+		this.firmware = ''
+		this.routerName = ''
+		this.routes.clear()
+		this.names.clear()
+		this.sourceStatus.clear()
+		this.destinationStatus.clear()
+		this.sourceDetail = []
+		this.destinationDetail = []
+		this.presets = new Map()
+		this.slots.clear()
+		this.staged.clear()
+		this.stagedPreset = undefined
+		this.hotplugging.clear()
+		this.standby = false
+		this.clearSelection()
+	}
+
 	selectInput(input: number): void {
 		if (this.pairStaged) this.selectedOutput = undefined
 		this.pairStaged = false
@@ -107,7 +129,6 @@ export class RouterState {
 		return input === 0 ? 'None' : this.inputName(input)
 	}
 
-	/** True while this preset's routes are staged and a take would change something */
 	/** What a take would leave routed: the staged routes, and the current ones everywhere else */
 	takeResult(): number[] {
 		return Array.from({ length: this.outputCount }, (_, index) => {
@@ -121,6 +142,7 @@ export class RouterState {
 		return name && this.presets.has(name) ? name : undefined
 	}
 
+	/** True while this preset's routes are staged and a take would change something */
 	isPresetStaged(name: string): boolean {
 		return this.stagedPreset === name && this.hasStagedRoutes
 	}
