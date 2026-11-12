@@ -35,7 +35,7 @@ done
 shas="$(git rev-list --no-merges --reverse "$base..$head")"
 mapfile -t shas <<<"$shas"
 
-types='feat|fix|refactor|perf|test|docs|chore|ci|build'
+types='feat|fix|refactor|perf|test|docs|style|chore|ci|build'
 # type, optional (scope), optional ! for a breaking change, then ": description"
 header="^($types)(\([^()[:space:]]+\))?!?: [^[:space:]]"
 # Dependabot ("Bump x from 1.0.0 to 1.0.1", "Bump x and y in /dir", "Bump the npm group ...")
