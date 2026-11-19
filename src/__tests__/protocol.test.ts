@@ -9,6 +9,7 @@ import {
 	parseEdidProperty,
 	parseEdidStatus,
 	parseError,
+	replyError,
 	parseList,
 	parsePortName,
 	parsePortStatus,
@@ -92,6 +93,17 @@ describe('parsing what the router sent', () => {
 		})
 		expect(parseError('pE /MEDIA/NAMES/VIDEO.O7 %E004: Invalid value')?.code).toBe('E004')
 		expect(parseError('mO /MEDIA/XP/VIDEO:switch=OK')).toBeUndefined()
+	})
+
+	// measured on an MX2-16x16-HDMI20-R, firmware 1.11.3b5
+	it('reads the error for a command the router could not parse', () => {
+		expect(parseError('-E 0003#OPEN /MEDIA/NAMES/VIDEO.* %E001: Syntax error')).toEqual({
+			code: 'E001',
+			message: 'Syntax error',
+		})
+		expect(parseError('-E 0005#GET %E001: Syntax error')?.code).toBe('E001')
+		expect(parseError('-E 0007#GET /MEDIA/NAMES/VIDEO.O1=x %E001: Syntax error')?.message).toBe('Syntax error')
+		expect(replyError(['-E 0004#FOO /MEDIA %E001: Syntax error'])?.code).toBe('E001')
 	})
 
 	it('drops only the empty entry after the last semicolon', () => {

@@ -190,9 +190,12 @@ export interface RouterError {
 	message: string
 }
 
-/** `mE /A:b %E007: Access denied`, and the same with pE or nE */
+/**
+ * `mE /A:b %E007: Access denied`, and the same with pE or nE. A command the router can't parse gets
+ * `-E 0003#GET %E001: Syntax error`, which echoes the command, spaces and all, so the code is the last one.
+ */
 export function parseError(line: string): RouterError | undefined {
-	const match = /^[mpn]E\s+\S+\s+%(E\d+):?\s*(.*)$/.exec(line)
+	const match = /^(?:[mpn]E\s+\S+|-E\s+.*)\s+%(E\d+):?\s*(.*)$/.exec(line)
 	return match ? { code: match[1], message: match[2] } : undefined
 }
 
