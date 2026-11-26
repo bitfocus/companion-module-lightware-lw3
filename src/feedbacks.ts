@@ -30,6 +30,8 @@ export type FeedbacksSchema = {
 	outputLocked: { type: 'boolean'; options: { output: string } }
 	outputStaged: { type: 'boolean'; options: { output: string } }
 	outputNext: { type: 'boolean'; options: { output: string } }
+	outputStagedFlash: { type: 'boolean'; options: { output: string } }
+	outputNextFlash: { type: 'boolean'; options: { output: string } }
 	stagedWaiting: { type: 'boolean'; options: Record<string, never> }
 	stagedRoutes: { type: 'boolean'; options: Record<string, never> }
 	portSignal: { type: 'boolean'; options: { port: string } }
@@ -253,6 +255,48 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			],
 			callback: (feedback) =>
 				portNumber(feedback.options.output, 'O') === state.selectedOutput && state.nextInput !== undefined,
+		},
+		outputStagedFlash: {
+			type: 'boolean',
+			name: 'Staged output, flashing',
+			description: 'Flashes while a route is staged for this output, to swap its current input for the staged one',
+			defaultStyle: { bgcolor: 0xff8000, color: 0x000000 },
+			options: [
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
+			],
+			callback: (feedback) => {
+				const output = portNumber(feedback.options.output, 'O')
+				return output !== undefined && state.pendingInput(output) !== undefined && state.routedFlashOn
+			},
+		},
+		outputNextFlash: {
+			type: 'boolean',
+			name: 'Selected output has a new input waiting, flashing',
+			description: 'Flashes while the selected input is not yet on this selected output and is not staged',
+			defaultStyle: { bgcolor: 0xffff00, color: 0x000000 },
+			options: [
+				{
+					type: 'dropdown',
+					id: 'output',
+					label: 'Output',
+					default: 'O1',
+					choices: outputs,
+					expressionDescription: OUTPUT_EXPRESSION,
+					...OUTPUT_VALUE,
+				},
+			],
+			callback: (feedback) =>
+				portNumber(feedback.options.output, 'O') === state.selectedOutput &&
+				state.nextInput !== undefined &&
+				state.routedFlashOn,
 		},
 		stagedWaiting: {
 			type: 'boolean',

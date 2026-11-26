@@ -56,13 +56,25 @@ interface Bounds {
 }
 
 const FULL: Bounds = { x: 5, y: 5, width: 90, height: 90 }
-/** Layout, in percent of the button, of the stacked output button */
+/** Layout, in percent of the button, of the output button that shows its routed input: two names, a line between */
 const STACK = {
-	output: { x: 5, y: 5, width: 90, height: 30 },
-	cross: { x: 40, y: 25, width: 20, height: 20 },
-	current: { x: 5, y: 35, width: 90, height: 30 },
-	arrow: { x: 40, y: 55, width: 20, height: 20 },
-	staged: { x: 5, y: 65, width: 90, height: 30 },
+	output: { x: 5, y: 4, width: 90, height: 44 },
+	input: { x: 5, y: 52, width: 90, height: 44 },
+	/** The line between the output and its input */
+	rule: 50,
+}
+/** On the routed output button, a word longer than this is broken into pieces this long, as Companion only wraps at spaces */
+const WORD_CHARS = 8
+
+/**
+ * A Companion expression that breaks any word longer than WORD_CHARS onto new lines, leaving the rest of the name for
+ * Companion to wrap at its spaces. Nothing is dropped, as names often differ only at the end.
+ */
+export function wrappedName(variable: string, brackets = false): string {
+	const breakWord = `(word) => arrayReduce(split(word, ''), (text, char, i) => i > 0 && i % ${WORD_CHARS} == 0 ? concat(text, '\\n', char) : concat(text, char), '')`
+	const wrapped = `join(arrayMap(split(${variable}, ' '), ${breakWord}), ' ')`
+	// brackets go on after, so one can't end up alone on a line
+	return brackets ? `concat('[', ${wrapped}, ']')` : wrapped
 }
 
 const textLayer = (
@@ -89,6 +101,40 @@ const textLayer = (
 		font: 'companion-mono',
 		outlineColor: 0xff000000,
 	}) as const
+
+/**
+ * A text layer showing a name wrapped by {@link wrappedName}. It starts large and shrinks to fit, so short names stay
+ * readable from further away, at the cost of names changing size as they change.
+ */
+const wrappedLayer = (
+	id: string,
+	name: string,
+	variable: string,
+	bounds: Bounds,
+	enabled = true,
+	brackets = false,
+) => ({
+	...textLayer(id, name, '', bounds, enabled),
+	text: { isExpression: true, value: wrappedName(variable, brackets) },
+})
+
+/** A thin black line across the button */
+const ruleLayer = (id: string, name: string, y: number) =>
+	({
+		type: 'line',
+		id,
+		name,
+		fromX: 5,
+		fromY: y,
+		toX: 95,
+		toY: y,
+		// in percent of the button, like the legend border
+		borderWidth: 1.5,
+		borderColor: 0x000000,
+		borderPosition: 'center',
+	}) as const
+
+type Layer = ReturnType<typeof textLayer> | ReturnType<typeof wrappedLayer> | ReturnType<typeof ruleLayer>
 
 type PresetActions = CompanionButtonStepActions<ModuleSchema>['down']
 
@@ -144,7 +190,7 @@ const legendFeedbacks = (port: string | undefined) =>
 
 /** A button in the module style: the image on a coloured background, plus a plain version as a fallback */
 function moduleButton(
-	spec: ButtonSpec & { layers: ReturnType<typeof textLayer>[]; fallbackText: string },
+	spec: ButtonSpec & { layers: Layer[]; fallbackText: string },
 ): CompanionPresetDefinitions<ModuleSchema>[string] {
 	const steps: CompanionButtonStepActions<ModuleSchema>[] = [
 		spec.holdActions
@@ -374,35 +420,43 @@ export function UpdatePresets(self: ModuleInstance): void {
 			actions: [{ actionId: 'selectDestination', options }],
 			feedbacks,
 		})
-		const current = `${VAR}${sourceNameVar(output)})`
-		const staged = `[${VAR}${stagedNameVar(output)})]`
-		const next = `[${VAR}selected_input_label)]`
+		const outputVar = `${VAR}${nameVar(port)})`
+		const currentVar = `${VAR}${sourceNameVar(output)})`
+		const stagedVar = `${VAR}${stagedNameVar(output)})`
+		const nextVar = `${VAR}selected_input_label)`
 		routedIds.push(`routed_${output}`)
+		// one input line, which flashes between the current input and the staged or selected one while a change waits
 		presets[`routed_${output}`] = moduleButton({
 			name: `Output ${output} with its routed input`,
 			background: DESTINATION,
 			legendPort: port,
 			layers: [
-				textLayer('output', 'this output', name, STACK.output),
-				textLayer('cross', 'xpt', 'x', STACK.cross),
-				textLayer('current', 'current input', current, STACK.current),
-				textLayer('arrow', 'next xpt', 'v', STACK.arrow, false),
-				textLayer('staged', 'staged input', staged, STACK.staged, false),
-				textLayer('next', 'selected input', next, STACK.staged, false),
+				wrappedLayer('output', 'this output', outputVar, STACK.output),
+				ruleLayer('rule', 'line', STACK.rule),
+				wrappedLayer('current', 'current input', currentVar, STACK.input),
+				wrappedLayer('staged', 'staged input', stagedVar, STACK.input, false, true),
+				wrappedLayer('next', 'selected input', nextVar, STACK.input, false, true),
 			],
-			fallbackText: `${name}\n${current}\n${staged}`,
+			fallbackText: `${outputVar}\n${currentVar}`,
 			actions: [{ actionId: 'selectDestination', options }],
 			feedbacks: [
 				{ feedbackId: 'destinationSelected', options: { port: output }, background: SELECTED_DST },
 				{ feedbackId: 'portMuted', options: { port }, background: MUTED },
 				{ feedbackId: PUSHED, options: {}, background: SELECTED_DST },
-				{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED, shows: ['arrow', 'staged'] },
+				{ feedbackId: 'outputStaged', options: { output: port }, background: STAGED },
 				{
-					feedbackId: 'outputNext',
+					feedbackId: 'outputStagedFlash',
 					options: { output: port },
-					shows: ['arrow', 'next'],
-					hides: ['staged'],
-					fallbackText: `${name}\n${current}\n${next}`,
+					shows: ['staged'],
+					hides: ['current'],
+					fallbackText: `${outputVar}\n[${stagedVar}]`,
+				},
+				{
+					feedbackId: 'outputNextFlash',
+					options: { output: port },
+					shows: ['next'],
+					hides: ['current', 'staged'],
+					fallbackText: `${outputVar}\n[${nextVar}]`,
 				},
 				{ feedbackId: 'portLocked', options: { port }, background: LOCKED },
 			],

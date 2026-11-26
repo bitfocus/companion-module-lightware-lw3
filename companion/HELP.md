@@ -30,7 +30,7 @@ The connection is tested every 3 seconds, as the router says nothing while nothi
 
 Select an output and an input, in either order, then press TAKE. The selection clears once the router accepts the route, and stays if the router refuses it. A selected input flashes while taking it would change the output's route.
 
-On the output button that shows its routed input, the selected input appears below as `v [name]` until you take it, so you can see what's about to change. Staged routes show the same way, in orange.
+On the output button that shows its routed input, the input line shows the current input for 1.5 seconds, then the selected one, as `[name]`, for 1 second, until you take it, so you can see what's about to change. Staged routes show the same way, in orange. Companion wraps names at their spaces, so any word longer than 8 characters is broken onto a new line. Nothing is dropped.
 
 Press an output and the input on it lights up. Press an input and every output carrying it lights up.
 
@@ -118,6 +118,8 @@ An output with no display shows no border even with a source routed to it, as th
 **Signal on a port** and **Cable connected to a port** come from the router's own port status. On an output, signal means a live input is routed to it, not that a display is there: use **Cable connected** for that.
 
 ### Port names, EDID and HDCP
+
+Keep port names short if you can. Buttons fit about 8 characters on a line at a size you can read from across a desk, and the longer a name is, the smaller it gets. A short code like `A1.1-ES1` reads far better than `actor 1.1 | Event screen 1`, especially on the output button that shows its routed input, where two names share one button.
 
 Use the link in the connection settings, or add `/instance/<connection label>/` to this Companion's web address. It's one page, titled with the router's name, with two tables, read fresh from the router each time it opens or you press Reload.
 

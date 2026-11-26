@@ -31,6 +31,8 @@ export class RouterState {
 	/** Which kind of port was pressed last, which decides what the routed feedbacks show */
 	active: 'input' | 'output' | undefined
 	flashOn = true
+	/** The routed output button's slower flash: true while it shows the staged or selected input, not the current one */
+	routedFlashOn = true
 	/** Ports part way through a hotplug */
 	readonly hotplugging = new Set<PortId>()
 	/** SAVE was pressed: the next router preset pressed is overwritten instead of recalled */

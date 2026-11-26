@@ -96,6 +96,9 @@ const DEFINITIONS_DEBOUNCE_MS = 100
 /** Saving a preset could announce several changes, which only need reading once */
 const PRESET_READ_DEBOUNCE_MS = 200
 const FLASH_MS = 500
+/** The routed output button mostly shows what's live: the current input this long, then the change waiting this long */
+const ROUTED_CURRENT_MS = 1500
+const ROUTED_CHANGE_MS = 1000
 /** A fresh attempt gets through as soon as the network returns; one left running backs off for over a minute */
 const CONNECT_TIMEOUT_MS = 5000
 /** The router has nothing to say while nothing changes, so a quiet connection has to be tested */
@@ -139,6 +142,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#connectTimer: ReturnType<typeof setTimeout> | undefined
 	#presetReadTimer: ReturnType<typeof setTimeout> | undefined
 	#flashTimer: ReturnType<typeof setInterval> | undefined
+	#routedFlashTimer: ReturnType<typeof setTimeout> | undefined
 	#saveArmTimer: ReturnType<typeof setTimeout> | undefined
 	#definitionsTimer: ReturnType<typeof setTimeout> | undefined
 	#choicesDirty = false
@@ -1551,7 +1555,9 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			'routedOutput',
 			'sourceSelected',
 			'outputNext',
+			'outputNextFlash',
 			'outputStaged',
+			'outputStagedFlash',
 			'stagedWaiting',
 			'presetLive',
 			'presetStaged',
@@ -1672,6 +1678,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			'sourceSelected',
 			'destinationSelected',
 			'outputNext',
+			'outputNextFlash',
+			'outputStagedFlash',
 			'portMuted',
 			'hotplugging',
 			'outputLocked',
@@ -1682,7 +1690,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	#stagedChanged(): void {
 		this.#publish(routeValues(this.state))
 		this.#syncFlash()
-		this.checkFeedbacks('outputStaged', 'stagedWaiting', 'stagedRoutes', 'presetStaged', 'slotStaged')
+		this.checkFeedbacks(
+			'outputStaged',
+			'outputStagedFlash',
+			'outputNextFlash',
+			'stagedWaiting',
+			'stagedRoutes',
+			'presetStaged',
+			'slotStaged',
+		)
 	}
 
 	#presetContentsChanged(): void {
@@ -1693,6 +1709,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	/** The flash only runs while there is something to flash */
 	#syncFlash(): void {
 		const { state } = this
+		this.#syncRoutedFlash()
 		if (state.nextInput === undefined && !state.hasStagedRoutes && !state.saveArmed) {
 			if (!this.#flashTimer) return
 			this.#stopFlash()
@@ -1709,6 +1726,36 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (this.#flashTimer) clearInterval(this.#flashTimer)
 		this.#flashTimer = undefined
 		this.state.flashOn = true
+		this.#stopRoutedFlash()
+	}
+
+	/** Its own slower flash, starting on the change waiting, so a press shows it straight away */
+	#syncRoutedFlash(): void {
+		const { state } = this
+		if (state.nextInput === undefined && !state.hasStagedRoutes) {
+			if (!this.#routedFlashTimer) return
+			this.#stopRoutedFlash()
+			this.checkFeedbacks('outputStagedFlash', 'outputNextFlash')
+			return
+		}
+		if (this.#routedFlashTimer) return
+		const next = (): void => {
+			this.#routedFlashTimer = setTimeout(
+				() => {
+					state.routedFlashOn = !state.routedFlashOn
+					this.checkFeedbacks('outputStagedFlash', 'outputNextFlash')
+					next()
+				},
+				state.routedFlashOn ? ROUTED_CHANGE_MS : ROUTED_CURRENT_MS,
+			)
+		}
+		next()
+	}
+
+	#stopRoutedFlash(): void {
+		if (this.#routedFlashTimer) clearTimeout(this.#routedFlashTimer)
+		this.#routedFlashTimer = undefined
+		this.state.routedFlashOn = true
 	}
 
 	// ---- definitions ------------------------------------------------------------------------

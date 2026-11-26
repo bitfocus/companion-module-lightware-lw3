@@ -6,6 +6,7 @@ import { Script } from 'node:vm'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { InstanceStatus } from '@companion-module/base'
 import { portNumber, portOf } from '../choices.js'
+import { wrappedName } from '../presets.js'
 import { plainName } from '../protocol.js'
 import { FakeLw3, until } from './fake-lw3.js'
 
@@ -64,6 +65,35 @@ const lastPresets = (module: Module): Record<string, any> => {
 	const calls = mock(module.setPresetDefinitions).mock.calls
 	return calls[calls.length - 1][1] as Record<string, any>
 }
+
+describe('names wrapped on the routed output button', () => {
+	// the Companion expression functions it uses, as Companion 5.1.3 defines them
+	const wrap = (name: string, brackets = false): string =>
+		new Script(wrappedName(JSON.stringify(name), brackets)).runInNewContext({
+			concat: (...parts: unknown[]) => ''.concat(...parts.map(String)),
+			split: (text: string, by: string) => String(text).split(by),
+			join: (parts: unknown[], by: string) => parts.map(String).join(by),
+			arrayMap: (items: unknown[], fn: (item: unknown, i: number) => unknown) => items.map((item, i) => fn(item, i)),
+			arrayReduce: (items: unknown[], fn: (acc: unknown, item: unknown, i: number) => unknown, start: unknown) =>
+				items.reduce((acc, item, i) => fn(acc, item, i), start),
+		})
+
+	it('leaves names with short words for Companion to wrap at their spaces, dropping nothing', () => {
+		expect(wrap('Output 1')).toBe('Output 1')
+		expect(wrap('actor 1.1 | Event screen 1')).toBe('actor 1.1 | Event screen 1')
+		expect(wrap('Proc. Floor Down B/up', true)).toBe('[Proc. Floor Down B/up]')
+	})
+
+	it('breaks only the words too long to wrap', () => {
+		expect(wrap('abcdef1234567890abcdef1234567890').split('\n')).toEqual([
+			'abcdef12',
+			'34567890',
+			'abcdef12',
+			'34567890',
+		])
+		expect(wrap('1234567890ab cdef12345678 90abcdef', true)).toBe('[12345678\n90ab cdef1234\n5678 90abcdef]')
+	})
+})
 
 describe('the module against the fake router', () => {
 	let fake: FakeLw3
@@ -798,6 +828,24 @@ describe('the module against the fake router', () => {
 			module.selectOutput(7)
 			module.selectInput(3)
 			expect(next('O7')).toBe(false)
+		})
+
+		it('flashes the staged and the selected input on their output, and nowhere else', async () => {
+			await ready()
+			const lit = (id: 'outputStagedFlash' | 'outputNextFlash', output: string): boolean =>
+				lastCall(module.setFeedbackDefinitions)[id].callback({ options: { output } })
+			module.stage(3, 7)
+			expect(lit('outputStagedFlash', 'O7')).toBe(true)
+			expect(lit('outputStagedFlash', 'O8')).toBe(false)
+			module.state.routedFlashOn = false
+			expect(lit('outputStagedFlash', 'O7')).toBe(false)
+			module.selectOutput(8)
+			module.selectInput(4)
+			// a new selection starts from the bright half, so the name shows straight away
+			expect(lit('outputNextFlash', 'O8')).toBe(true)
+			expect(lit('outputNextFlash', 'O7')).toBe(false)
+			module.state.routedFlashOn = false
+			expect(lit('outputNextFlash', 'O8')).toBe(false)
 		})
 
 		it('asks for a selection when there is nothing to take', async () => {
