@@ -9,7 +9,7 @@ All notable changes to this module are documented here. The format follows
 
 ## [3.0.0] - Unreleased
 
-A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8-HDMI20-L on firmware 1.10.1b4. It has since been tested on the MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R and MX2-8x8-DH-8DPio-A too. The ids of the actions, feedbacks and variables it keeps from v2 are unchanged and there is no upgrade script, but upgrading a v2 configuration has not been tested. Check your buttons after upgrading.
+A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8-HDMI20-L on firmware 1.10.1b4. It has since been tested on the MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R, MX2-8x8-DH-8DPio-A and MX2-48x48-HDMI20-A-R too. The ids of the actions, feedbacks and variables it keeps from v2 are unchanged and there is no upgrade script, but upgrading a v2 configuration has not been tested. Check your buttons after upgrading.
 
 ### ⚠ BREAKING CHANGES
 
@@ -72,8 +72,9 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - Soft reset.
 - Whether the router announces a lock changed elsewhere.
 - How many router presets the router can hold, and the longest name it allows. 46 characters was accepted.
-- Any router other than the MX2-8x8-HDMI20-L, MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R and MX2-8x8-DH-8DPio-A, firmware other than 1.10.1b4 on the first two, 1.11.3b5 on the 16x16 and the DP router, and 1.12.0b8 on the 24x24, and any version of Companion other than 5.1.1 and 5.1.2. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
-- Standby and hotplug with real devices attached on the MX2-16x16-HDMI20-R and MX2-24x24-HDMI20-R.
+- Any router other than the MX2-8x8-HDMI20-L, MX2-8X8-HDMI20-AUDIO, MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R, MX2-8x8-DH-8DPio-A and MX2-48x48-HDMI20-A-R, firmware other than 1.10.1b4 on the first two, 1.11.3b5 on the 16x16 and the DP router, 1.12.0b8 on the 24x24, and 1.10.0b5 and 1.11.3b5 on the 48x48, and any version of Companion other than 5.1.1, 5.1.2 and 5.1.3. The L was later upgraded to 1.11.3b5, and only the connection limit and standby were measured on that.
+- Standby and hotplug with real devices attached on the MX2-16x16-HDMI20-R, MX2-24x24-HDMI20-R and MX2-48x48-HDMI20-A-R.
+- A command line test of the MX2-48x48-HDMI20-A-R's spare ports, and its front-panel preset buttons.
 - How many routes one command can hold beyond 24, which matters for a 48x48.
 - A router with both HDMI and DisplayPort ports, and DisplayPort at 1.62 or 2.7 Gbps per lane, whose colours come from the router's own legend.
 - The audio settings of the MX2-8X8-HDMI20-AUDIO, which the module leaves alone.
@@ -85,6 +86,8 @@ A rewrite in TypeScript for Companion 5, built on measurements of a real MX2-8x8
 - Hotplugging an input from the module, rather than by command. The command was tested with a MacBook on Input 1.
 
 ### Tested on hardware
+
+The MX2-48x48-HDMI20-A-R in Companion 5.1.3, on firmware 1.10.0b5 and again after upgrading to 1.11.3b5: connecting, the ports page at 96 rows, routing and unrouting a spare output, and noticing a pulled network cable and its return. On 1.10.0b5 also the router preset list. On 1.11.3b5 also renaming ports with names over 31 characters, and the status borders, with a source on one input and a display on one output. The output button that shows its routed input was checked on a Stream Deck: its flash, and how long names wrap. A read of its whole LW3 tree on both firmware versions matched the 24x24's in every path the module uses.
 
 The MX2-8x8-DH-8DPio-A on firmware 1.11.3b5, in Companion 5.1.2 with the built package: hotplug by link train on an output and an input, the ports page including on a phone, Default names, status borders at 5.4 Gbps per lane, routing, TAKE, holding an input for every output, locks, mutes, presets and front-panel preset buttons. A command line test of its spare ports matched the L's results for every LW3 command the module uses, except that DisplayPort ports have no 5V or HPD setting, took all 8 outputs in one command, and found the same limit of 15 connections.
 

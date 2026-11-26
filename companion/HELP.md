@@ -1,9 +1,10 @@
-Version 3.0.0 is a rewrite, built from measurements of real routers. It has been tested on Companion 5.1.2 with:
+Version 3.0.0 is a rewrite, built from measurements of real routers. It has been tested on Companion 5.1.2 and 5.1.3 with:
 
 - MX2-8x8-HDMI20-L, firmware 1.10.1b4
 - MX2-8X8-HDMI20-AUDIO, firmware 1.10.1b4
 - MX2-16x16-HDMI20-R, firmware 1.11.3b5
 - MX2-24x24-HDMI20-R, firmware 1.12.0b8
+- MX2-48x48-HDMI20-A-R, firmware 1.10.0b5 and 1.11.3b5
 - MX2-8x8-DH-8DPio-A, firmware 1.11.3b5
 
 Other models may have different LW3 paths, and they have not been tested. If yours isn't supported, the log and the connection status say so.
